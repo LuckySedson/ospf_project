@@ -1,6 +1,7 @@
 {
   "router_id": "R1",
   "port": 9001,
+  "status_port": 9101,
   "links": [
     {"peer_port": 9002, "cost": 1},
     {"peer_port": 9003, "cost": 5}

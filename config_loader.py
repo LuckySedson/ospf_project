@@ -5,7 +5,7 @@ def load_config(path):
     with open(path, "r") as f:
         data = json.load(f)
 
-    required = ("router_id", "port", "links")
+    required = ("router_id", "port", "status_port", "links")
     for key in required:
         if key not in data:
             raise ValueError(f"Config invalide, champ manquant: {key}")

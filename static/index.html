@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>OSPF Simulator</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>OSPF — Simulateur de routage par état de lien</h1>
+    <div class="controls">
+      <button id="btn-start-all" class="btn btn-primary">Démarrer tout</button>
+      <button id="btn-stop-all" class="btn btn-danger">Arrêter tout</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="topology-panel">
+      <canvas id="topology" width="700" height="500"></canvas>
+    </section>
+
+    <section class="routers-panel" id="routers-panel">
+      <!-- cartes des routeurs generees dynamiquement -->
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

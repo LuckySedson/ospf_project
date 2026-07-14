@@ -1,8 +1,10 @@
 import argparse
+import json
 import socket
 import threading
 import time
 import logging
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from config_loader import load_config
 from messages import build_hello, build_lsa, parse_message, HELLO, LSA
@@ -18,10 +20,37 @@ CHECK_INTERVAL = 1
 HOST = "127.0.0.1"
 
 
+class StatusHandler(BaseHTTPRequestHandler):
+    router_ref = None
+
+    def do_GET(self):
+        if self.path == "/state":
+            payload = {
+                "router_id": self.router_ref.router_id,
+                "neighbors": self.router_ref.neighbor_manager.snapshot(),
+                "lsdb": self.router_ref.lsdb.snapshot(),
+                "routing_table": self.router_ref.routing_table,
+            }
+            body = json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass
+
+
 class Router:
     def __init__(self, config):
         self.router_id = config["router_id"]
         self.port = config["port"]
+        self.status_port = config["status_port"]
         self.links_config = config["links"]
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -45,8 +74,9 @@ class Router:
         threading.Thread(target=self.hello_loop, daemon=True).start()
         threading.Thread(target=self.lsa_loop, daemon=True).start()
         threading.Thread(target=self.maintenance_loop, daemon=True).start()
+        threading.Thread(target=self.start_status_server, daemon=True).start()
 
-        self.log.info(f"Routeur demarre sur le port {self.port}")
+        self.log.info(f"Routeur demarre sur le port {self.port} (statut sur {self.status_port})")
 
         while self.running:
             time.sleep(1)
@@ -120,6 +150,11 @@ class Router:
             if purged:
                 self.log.info("LSA obsolete purge de la LSDB")
                 self.recompute_routing_table()
+
+    def start_status_server(self):
+        StatusHandler.router_ref = self
+        server = ThreadingHTTPServer((HOST, self.status_port), StatusHandler)
+        server.serve_forever()
 
     def recompute_routing_table(self):
         graph = build_graph(self.lsdb.snapshot())
