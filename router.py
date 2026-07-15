@@ -4,6 +4,7 @@ import socket
 import threading
 import time
 import logging
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from config_loader import load_config
@@ -214,6 +215,12 @@ def main():
     config = load_config(args.config)
     router = Router(config)
     router.start()
+    
+    try:
+        router.start()
+    except KeyboardInterrupt:
+        print(f"\n[!] Routeur {router.router_id} arrêté.")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
