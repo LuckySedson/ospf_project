@@ -55,6 +55,12 @@ class Router:
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((HOST, self.port))
+        
+        if hasattr(socket, "WSAIoctl"):
+            try:
+                self.sock.ioctl(socket.SIO_UDP_CONNRESET, False)
+            except Exception:
+                pass
 
         self.neighbor_manager = NeighborManager(self.links_config, NEIGHBOR_TIMEOUT)
         self.lsdb = LSDB(LSA_MAX_AGE)
@@ -83,16 +89,24 @@ class Router:
 
     def listen_loop(self):
         while self.running:
-            data, addr = self.sock.recvfrom(4096)
-            msg = parse_message(data)
-            if msg is None:
-                continue
+            try:
+                data, addr = self.sock.recvfrom(4096)
+                msg = parse_message(data)
+                if msg is None:
+                    continue
 
-            peer_port = addr[1]
-            if msg["type"] == HELLO:
-                self.handle_hello(peer_port, msg)
-            elif msg["type"] == LSA:
-                self.handle_lsa(msg)
+                peer_port = addr[1]
+                if msg["type"] == HELLO:
+                    self.handle_hello(peer_port, msg)
+                elif msg["type"] == LSA:
+                    self.handle_lsa(msg)
+                    
+            except ConnectionResetError:
+                continue
+            except Exception as e:
+                if self.running:
+                    self.log.error(f"Erreur dans listen_loop: {e}")
+                    time.sleep(0.1)
 
     def handle_hello(self, peer_port, msg):
         changed = self.neighbor_manager.process_hello(
