@@ -63,6 +63,22 @@ class NeighborManager:
                 if e["state"] == FULL and e["peer_id"]
             }
 
+    def add_neighbor(self, peer_port, cost):
+        with self.lock:
+            if peer_port in self.neighbors:
+                self.neighbors[peer_port]["cost"] = cost
+            else:
+                self.neighbors[peer_port] = {
+                    "peer_id": None,
+                    "cost": cost,
+                    "state": DOWN,
+                    "last_hello": 0,
+                }
+
+    def remove_neighbor(self, peer_port):
+        with self.lock:
+            self.neighbors.pop(peer_port, None)
+
     def snapshot(self):
         with self.lock:
             return {port: dict(entry) for port, entry in self.neighbors.items()}

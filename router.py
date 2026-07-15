@@ -23,6 +23,15 @@ HOST = "127.0.0.1"
 class StatusHandler(BaseHTTPRequestHandler):
     router_ref = None
 
+    def _send_json(self, payload, status=200):
+        body = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         if self.path == "/state":
             payload = {
@@ -31,13 +40,25 @@ class StatusHandler(BaseHTTPRequestHandler):
                 "lsdb": self.router_ref.lsdb.snapshot(),
                 "routing_table": self.router_ref.routing_table,
             }
-            body = json.dumps(payload).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Content-Length", str(len(body)))
+            self._send_json(payload)
+        else:
+            self.send_response(404)
             self.end_headers()
-            self.wfile.write(body)
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            payload = json.loads(raw.decode())
+        except ValueError:
+            payload = {}
+
+        if self.path == "/admin/add_link":
+            self.router_ref.admin_add_link(payload["peer_port"], payload["cost"])
+            self._send_json({"ok": True})
+        elif self.path == "/admin/remove_link":
+            self.router_ref.admin_remove_link(payload["peer_port"])
+            self._send_json({"ok": True})
         else:
             self.send_response(404)
             self.end_headers()
@@ -55,8 +76,8 @@ class Router:
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((HOST, self.port))
-        
-        if hasattr(socket, "WSAIoctl"):
+
+        if hasattr(socket, "SIO_UDP_CONNRESET"):
             try:
                 self.sock.ioctl(socket.SIO_UDP_CONNRESET, False)
             except Exception:
@@ -100,7 +121,7 @@ class Router:
                     self.handle_hello(peer_port, msg)
                 elif msg["type"] == LSA:
                     self.handle_lsa(msg)
-                    
+
             except ConnectionResetError:
                 continue
             except Exception as e:
@@ -133,8 +154,8 @@ class Router:
         while self.running:
             seen = self.neighbor_manager.get_seen_peer_ids()
             payload = build_hello(self.router_id, seen)
-            for link in self.links_config:
-                self.sock.sendto(payload, (HOST, link["peer_port"]))
+            for port in list(self.neighbor_manager.snapshot().keys()):
+                self.sock.sendto(payload, (HOST, port))
             time.sleep(HELLO_INTERVAL)
 
     def lsa_loop(self):
@@ -164,6 +185,15 @@ class Router:
             if purged:
                 self.log.info("LSA obsolete purge de la LSDB")
                 self.recompute_routing_table()
+
+    def admin_add_link(self, peer_port, cost):
+        self.neighbor_manager.add_neighbor(peer_port, cost)
+        self.log.info(f"Lien ajoute/modifie dynamiquement vers le port {peer_port} (cout {cost})")
+
+    def admin_remove_link(self, peer_port):
+        self.neighbor_manager.remove_neighbor(peer_port)
+        self.log.info(f"Lien retire dynamiquement (port {peer_port})")
+        self.emit_lsa()
 
     def start_status_server(self):
         StatusHandler.router_ref = self

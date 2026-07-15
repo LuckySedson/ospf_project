@@ -3,7 +3,13 @@
   "port": 9002,
   "status_port": 9102,
   "links": [
-    {"peer_port": 9001, "cost": 1},
-    {"peer_port": 9003, "cost": 1}
+    {
+      "peer_port": 9001,
+      "cost": 1
+    },
+    {
+      "peer_port": 9003,
+      "cost": 1
+    }
   ]
 }

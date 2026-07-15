@@ -1,25 +1,48 @@
-console.log("=== [OSPF] script.js est chargé et s'exécute ! ===");
-
 const POLL_INTERVAL_MS = 1500;
 
 const canvas = document.getElementById("topology");
-if (!canvas) {
-  console.error("ERREUR CRITIQUE : L'élément <canvas id='topology'> est introuvable dans le HTML !");
-}
 const ctx = canvas ? canvas.getContext("2d") : null;
 const routersPanel = document.getElementById("routers-panel");
-if (!routersPanel) {
-  console.error("ERREUR CRITIQUE : L'élément id 'routers-panel' est introuvable !");
-}
+
+const modalOverlay = document.getElementById("modal-overlay");
+const modalTitle = document.getElementById("modal-title");
+const modalMessage = document.getElementById("modal-message");
+const modalConfirm = document.getElementById("modal-confirm");
+const modalCancel = document.getElementById("modal-cancel");
 
 let routersMeta = {};
 let portToRouterId = {};
+let lastRouterIdsKey = "";
+
+function showConfirmModal(title, message) {
+  return new Promise((resolve) => {
+    modalTitle.textContent = title;
+    modalMessage.textContent = message;
+    modalOverlay.classList.remove("hidden");
+
+    const cleanup = (result) => {
+      modalOverlay.classList.add("hidden");
+      modalConfirm.removeEventListener("click", onConfirm);
+      modalCancel.removeEventListener("click", onCancel);
+      modalOverlay.removeEventListener("click", onOverlayClick);
+      resolve(result);
+    };
+
+    const onConfirm = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+    const onOverlayClick = (e) => {
+      if (e.target === modalOverlay) cleanup(false);
+    };
+
+    modalConfirm.addEventListener("click", onConfirm);
+    modalCancel.addEventListener("click", onCancel);
+    modalOverlay.addEventListener("click", onOverlayClick);
+  });
+}
 
 async function fetchRouters() {
-  console.log("[API] Appel de /api/routers...");
   const res = await fetch("/api/routers");
   const data = await res.json();
-  console.log("[API] Données reçues pour les routeurs :", data);
   routersMeta = {};
   portToRouterId = {};
   data.forEach((r) => {
@@ -30,36 +53,98 @@ async function fetchRouters() {
 }
 
 async function fetchState() {
-  console.log("[API] Appel de /api/state...");
   const res = await fetch("/api/state");
-  const data = await res.json();
-  console.log("[API] État global reçu :", data);
-  return data;
+  return res.json();
 }
 
 async function startRouter(id) {
-  console.log(`[Action] Démarrage du routeur ${id}...`);
   await fetch(`/api/start/${id}`, { method: "POST" });
   refresh();
 }
 
 async function stopRouter(id) {
-  console.log(`[Action] Arrêt du routeur ${id}...`);
   await fetch(`/api/stop/${id}`, { method: "POST" });
   refresh();
 }
 
-document.getElementById("btn-start-all")?.addEventListener("click", async () => {
-  console.log("[Action Global] Démarrer tous les routeurs...");
+async function removeRouter(id) {
+  const confirmed = await showConfirmModal(
+    "Supprimer le routeur",
+    `Es-tu sûr de vouloir supprimer définitivement ${id} ? Cette action est irréversible.`
+  );
+  if (!confirmed) return;
+
+  await fetch(`/api/routers/remove/${id}`, { method: "POST" });
+  lastRouterIdsKey = "";
+  await refresh();
+}
+
+document.getElementById("btn-start-all").addEventListener("click", async () => {
   await fetch("/api/start_all", { method: "POST" });
   refresh();
 });
 
-document.getElementById("btn-stop-all")?.addEventListener("click", async () => {
-  console.log("[Action Global] Arrêter tous les routeurs...");
+document.getElementById("btn-stop-all").addEventListener("click", async () => {
   await fetch("/api/stop_all", { method: "POST" });
   refresh();
 });
+
+document.getElementById("btn-add-router").addEventListener("click", async () => {
+  const router_id = document.getElementById("new-router-id").value.trim();
+  const port = parseInt(document.getElementById("new-router-port").value, 10);
+  const status_port = parseInt(document.getElementById("new-router-status-port").value, 10);
+
+  if (!router_id || !port || !status_port) {
+    alert("Merci de remplir l'ID, le port UDP et le port de statut.");
+    return;
+  }
+
+  const links = [];
+  document.querySelectorAll(".link-checkbox").forEach((cb) => {
+    if (cb.checked) {
+      const peer = cb.dataset.peer;
+      const costInput = document.querySelector(`.link-cost[data-peer="${peer}"]`);
+      links.push({ peer_id: peer, cost: parseInt(costInput.value, 10) || 1 });
+    }
+  });
+
+  const res = await fetch("/api/routers/add", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ router_id, port, status_port, links }),
+  });
+  const data = await res.json();
+
+  if (!data.ok) {
+    alert("Erreur: " + data.error);
+    return;
+  }
+
+  document.getElementById("new-router-id").value = "";
+  document.getElementById("new-router-port").value = "";
+  document.getElementById("new-router-status-port").value = "";
+  lastRouterIdsKey = "";
+  refresh();
+});
+
+function renderAddRouterForm() {
+  const container = document.getElementById("new-router-links");
+  container.innerHTML = "";
+  Object.keys(routersMeta)
+    .sort()
+    .forEach((id) => {
+      const row = document.createElement("div");
+      row.className = "link-row";
+      row.innerHTML = `
+        <label>
+          <input type="checkbox" class="link-checkbox" data-peer="${id}" />
+          Lien vers ${id}
+        </label>
+        <input type="number" class="link-cost" data-peer="${id}" value="1" min="1" />
+      `;
+      container.appendChild(row);
+    });
+}
 
 function computePositions(routerIds) {
   const positions = {};
@@ -79,18 +164,13 @@ function computePositions(routerIds) {
 
 function drawTopology(state) {
   if (!ctx) return;
-  console.log("[Canvas] Dessin de la topologie en cours...");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  
+
   const routerIds = Object.keys(routersMeta).sort();
-  if (routerIds.length === 0) {
-    console.warn("[Canvas] Aucun routeur à dessiner dans routersMeta.");
-    return;
-  }
+  if (routerIds.length === 0) return;
 
   const positions = computePositions(routerIds);
 
-  // liens configurés (potentiels) en pointillés gris
   routerIds.forEach((id) => {
     const config = routersMeta[id];
     config.links.forEach((link) => {
@@ -100,7 +180,6 @@ function drawTopology(state) {
     });
   });
 
-  // liens actifs (FULL) en vert plein, avec le coût
   routerIds.forEach((id) => {
     const s = state[id];
     if (!s || !s.neighbors) return;
@@ -111,7 +190,6 @@ function drawTopology(state) {
     });
   });
 
-  // noeuds
   routerIds.forEach((id) => {
     const pos = positions[id];
     const running = state[id] && state[id].running;
@@ -129,7 +207,6 @@ function drawTopology(state) {
     ctx.textBaseline = "middle";
     ctx.fillText(id, pos.x, pos.y);
   });
-  console.log("[Canvas] Dessin terminé.");
 }
 
 function drawEdge(a, b, color, dashed, label) {
@@ -208,6 +285,7 @@ function renderRouterCard(id, s) {
         <span class="router-actions">
           <button class="btn btn-primary" data-action="start" data-id="${id}">Start</button>
           <button class="btn btn-danger" data-action="stop" data-id="${id}">Stop</button>
+          <button class="btn" data-action="remove" data-id="${id}">Suppr.</button>
         </span>
       </div>
     </div>
@@ -235,6 +313,7 @@ function renderRouterCard(id, s) {
     btn.addEventListener("click", () => {
       if (btn.dataset.action === "start") startRouter(btn.dataset.id);
       if (btn.dataset.action === "stop") stopRouter(btn.dataset.id);
+      if (btn.dataset.action === "remove") removeRouter(btn.dataset.id);
     });
   });
 
@@ -242,8 +321,6 @@ function renderRouterCard(id, s) {
 }
 
 function renderRouterCards(state) {
-  if (!routersPanel) return;
-  console.log("[DOM] Rendu des cartes routeurs...");
   routersPanel.innerHTML = "";
   Object.keys(routersMeta)
     .sort()
@@ -254,20 +331,23 @@ function renderRouterCards(state) {
 
 async function refresh() {
   try {
-    console.log("=== [Cycle Refresh] Début ===");
     await fetchRouters();
+
+    const idsKey = Object.keys(routersMeta).sort().join(",");
+    if (idsKey !== lastRouterIdsKey) {
+      renderAddRouterForm();
+      lastRouterIdsKey = idsKey;
+    }
+
     const state = await fetchState();
     drawTopology(state);
     renderRouterCards(state);
-    console.log("=== [Cycle Refresh] Succès ===");
   } catch (error) {
-    console.error("❌ CRASH DANS REFRESH :", error);
+    console.error("CRASH DANS REFRESH:", error);
   }
 }
 
-// Lancement au chargement du DOM
 window.addEventListener("DOMContentLoaded", () => {
-  console.log("[DOM] Prêt, lancement du premier refresh.");
   refresh();
   setInterval(refresh, POLL_INTERVAL_MS);
 });

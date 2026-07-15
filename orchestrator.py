@@ -5,7 +5,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 
 BASE_DIR = Path(__file__).parent
 CONFIGS_DIR = BASE_DIR / "configs"
@@ -27,6 +27,12 @@ def load_router_configs():
         router_configs[config["router_id"]] = config
 
 
+def save_config(config):
+    path = CONFIGS_DIR / f"{config['router_id']}.json"
+    with open(path, "w") as f:
+        json.dump(config, f, indent=2)
+
+
 def is_running(router_id):
     proc = processes.get(router_id)
     return proc is not None and proc.poll() is None
@@ -39,6 +45,20 @@ def fetch_router_state(status_port):
             return json.loads(resp.read().decode())
     except (urllib.error.URLError, TimeoutError, ConnectionRefusedError, OSError):
         return None
+
+
+def post_admin(status_port, path, payload):
+    try:
+        req = urllib.request.Request(
+            f"http://{HOST}:{status_port}{path}",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=0.5) as resp:
+            return resp.status == 200
+    except (urllib.error.URLError, OSError):
+        return False
 
 
 @app.route("/")
@@ -123,6 +143,102 @@ def get_state():
                 entry["error"] = "pas de reponse"
         state[router_id] = entry
     return jsonify(state)
+
+
+@app.route("/api/routers/add", methods=["POST"])
+def add_router():
+    load_router_configs()
+    data = request.get_json(force=True)
+
+    router_id = (data.get("router_id") or "").strip()
+    port = data.get("port")
+    status_port = data.get("status_port")
+    peer_links = data.get("links", [])
+
+    if not router_id or not port or not status_port:
+        return jsonify({"ok": False, "error": "champs manquants"}), 400
+    if router_id in router_configs:
+        return jsonify({"ok": False, "error": "router_id deja utilise"}), 400
+
+    used_ports = set()
+    for c in router_configs.values():
+        used_ports.add(c["port"])
+        used_ports.add(c["status_port"])
+    if port in used_ports or status_port in used_ports or port == status_port:
+        return jsonify({"ok": False, "error": "port deja utilise"}), 400
+
+    resolved_links = []
+    for link in peer_links:
+        peer_id = link.get("peer_id")
+        cost = link.get("cost")
+        if peer_id not in router_configs:
+            return jsonify({"ok": False, "error": f"routeur inconnu: {peer_id}"}), 400
+        resolved_links.append({
+            "peer_port": router_configs[peer_id]["port"],
+            "cost": cost,
+            "peer_id": peer_id,
+        })
+
+    new_config = {
+        "router_id": router_id,
+        "port": port,
+        "status_port": status_port,
+        "links": [{"peer_port": l["peer_port"], "cost": l["cost"]} for l in resolved_links],
+    }
+    save_config(new_config)
+
+    for link in resolved_links:
+        peer_config = router_configs[link["peer_id"]]
+        already = any(l["peer_port"] == port for l in peer_config["links"])
+        if not already:
+            peer_config["links"].append({"peer_port": port, "cost": link["cost"]})
+            save_config(peer_config)
+
+        if is_running(link["peer_id"]):
+            post_admin(peer_config["status_port"], "/admin/add_link", {"peer_port": port, "cost": link["cost"]})
+
+    load_router_configs()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/routers/remove/<router_id>", methods=["POST"])
+def remove_router(router_id):
+    load_router_configs()
+    if router_id not in router_configs:
+        return jsonify({"ok": False, "error": "routeur introuvable"}), 404
+
+    target_port = router_configs[router_id]["port"]
+
+    if is_running(router_id):
+        processes[router_id].terminate()
+
+    # 1) retirer le lien direct chez les voisins concernes (recalcule leur propre LSA)
+    for other_id, config in router_configs.items():
+        if other_id == router_id:
+            continue
+        new_links = [l for l in config["links"] if l["peer_port"] != target_port]
+        if len(new_links) != len(config["links"]):
+            config["links"] = new_links
+            save_config(config)
+            if is_running(other_id):
+                post_admin(config["status_port"], "/admin/remove_link", {"peer_port": target_port})
+
+    # 2) purger immediatement l'entree LSDB du routeur supprime chez TOUS les routeurs actifs
+    #    (pas seulement les voisins directs : sinon sa trace reste visible ailleurs
+    #    jusqu'a expiration naturelle du LSA, ~40s)
+    for other_id, config in router_configs.items():
+        if other_id == router_id:
+            continue
+        if is_running(other_id):
+            post_admin(config["status_port"], "/admin/purge_origin", {"origin": router_id})
+
+    config_path = CONFIGS_DIR / f"{router_id}.json"
+    if config_path.exists():
+        config_path.unlink()
+    processes.pop(router_id, None)
+
+    load_router_configs()
+    return jsonify({"ok": True})
 
 
 if __name__ == "__main__":
