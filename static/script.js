@@ -18,7 +18,9 @@ let selectedSourceId = null;
 let selectedDestId = null;
 let activeShortestPath = [];
 let latestState = {};
-let latestPositions = {}; // Stocke les positions globales pour gérer les clics
+let latestPositions = {};
+
+let activePackets = [];
 
 function showConfirmModal(title, message) {
   return new Promise((resolve) => {
@@ -172,7 +174,6 @@ function drawTopology(state) {
   if (!ctx) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Si aucun state n'est fourni (ex: appel depuis le click), on utilise le dernier state connu
   if (state) {
     latestState = state;
   } else {
@@ -183,7 +184,7 @@ function drawTopology(state) {
   if (routerIds.length === 0) return;
 
   const positions = computePositions(routerIds);
-  latestPositions = positions; // Sauvegarde pour la détection de clics
+  latestPositions = positions;
 
   routerIds.forEach((id) => {
     const config = routersMeta[id];
@@ -438,25 +439,34 @@ canvas.addEventListener("click", async (event) => {
 
   let clickedRouter = null;
 
-  // Détection du clic sur un nœud (routeur) via latestPositions
   for (const [id, pos] of Object.entries(latestPositions)) {
     const dist = Math.hypot(mouseX - pos.x, mouseY - pos.y);
-    if (dist < 26) { // Rayon de 26 pixels correspondant à drawTopology
+    if (dist < 26) {
       clickedRouter = { router_id: id, x: pos.x, y: pos.y };
       break;
     }
   }
 
   if (clickedRouter) {
+    const clickedId = clickedRouter.router_id;
+
     if (event.shiftKey) {
-      if (selectedSourceId === clickedRouter.router_id) {
+      if (selectedSourceId === clickedId) {
         alert("La destination ne peut pas être identique à la source !");
         return;
       }
-      selectedDestId = clickedRouter.router_id;
+      selectedDestId = clickedId;
     } else {
-      selectedSourceId = clickedRouter.router_id;
-      if (selectedDestId === selectedSourceId) {
+      if (!selectedSourceId) {
+        selectedSourceId = clickedId;
+      } else if (selectedSourceId && !selectedDestId) {
+        if (clickedId === selectedSourceId) {
+          selectedSourceId = null;
+        } else {
+          selectedDestId = clickedId;
+        }
+      } else {
+        selectedSourceId = clickedId;
         selectedDestId = null;
       }
     }
@@ -465,14 +475,12 @@ canvas.addEventListener("click", async (event) => {
     return;
   }
 
-  // Reconstruction dynamique des liens existants pour détecter un clic sur une ligne
   const links = [];
   Object.keys(routersMeta).forEach((id) => {
     const config = routersMeta[id];
     if (config && config.links) {
       config.links.forEach((link) => {
         const peerId = portToRouterId[link.peer_port];
-        // id < peerId permet d'éviter de traiter deux fois le même lien bidirectionnel
         if (peerId && id < peerId) {
           links.push({ from: id, to: peerId, cost: link.cost });
         }
@@ -480,7 +488,6 @@ canvas.addEventListener("click", async (event) => {
     }
   });
 
-  // Détection du clic sur un lien
   for (const link of links) {
     const n1 = latestPositions[link.from];
     const n2 = latestPositions[link.to];
@@ -505,7 +512,6 @@ canvas.addEventListener("click", async (event) => {
         });
         const res = await response.json();
         if (res.ok) {
-          // Mise à jour locale immédiate en attendant le prochain poll
           if (routersMeta[link.from]) {
             const l = routersMeta[link.from].links.find(x => portToRouterId[x.peer_port] === link.to);
             if (l) l.cost = newCost;
@@ -528,12 +534,129 @@ canvas.addEventListener("click", async (event) => {
     }
   }
 
-  // Clic dans le vide : reset de la sélection
   selectedSourceId = null;
   selectedDestId = null;
   activeShortestPath = [];
   drawTopology();
 });
+
+if (canvas) {
+  canvas.addEventListener("mousemove", (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+
+    let isHovered = false;
+
+    for (const [id, pos] of Object.entries(latestPositions)) {
+      const dist = Math.hypot(mouseX - pos.x, mouseY - pos.y);
+      if (dist < 26) {
+        isHovered = true;
+        break;
+      }
+    }
+
+    if (!isHovered) {
+      const links = [];
+      Object.keys(routersMeta).forEach((id) => {
+        const config = routersMeta[id];
+        if (config && config.links) {
+          config.links.forEach((link) => {
+            const peerId = portToRouterId[link.peer_port];
+            if (peerId && id < peerId) {
+              links.push({ from: id, to: peerId });
+            }
+          });
+        }
+      });
+
+      for (const link of links) {
+        const n1 = latestPositions[link.from];
+        const n2 = latestPositions[link.to];
+        if (!n1 || !n2) continue;
+
+        const distToLink = getDistanceToSegment(mouseX, mouseY, n1.x, n1.y, n2.x, n2.y);
+        if (distToLink < 8) {
+          isHovered = true;
+          break;
+        }
+      }
+    }
+
+    canvas.style.cursor = isHovered ? "pointer" : "default";
+  });
+}
+
+function spawnPacket(fromId, toId, type) {
+  const startPos = latestPositions[fromId];
+  const endPos = latestPositions[toId];
+  if (!startPos || !endPos) return;
+
+  activePackets.push({
+    fromId,
+    toId,
+    startX: startPos.x,
+    startY: startPos.y,
+    endX: endPos.x,
+    endY: endPos.y,
+    progress: 0,
+    speed: 0.012 + Math.random() * 0.01, // Vitesse fluide et asynchrone
+    color: type === "HELLO" ? "#33e6a8" : "#ffd700",
+    size: type === "HELLO" ? 4.5 : 6
+  });
+}
+
+function triggerPacketsFromState(state) {
+  Object.keys(state).forEach((routerId) => {
+    const rState = state[routerId];
+    if (!rState || !rState.neighbors || !rState.running) return;
+
+    Object.values(rState.neighbors).forEach((neighbor) => {
+      if (neighbor.state === "FULL" && neighbor.peer_id) {
+        const rand = Math.random();
+        
+        if (rand < 0.25) {
+          spawnPacket(routerId, neighbor.peer_id, "HELLO");
+        } 
+        else if (rand < 0.35) {
+          spawnPacket(routerId, neighbor.peer_id, "LSA");
+        }
+      }
+    });
+  });
+}
+
+function updateAndDrawPackets() {
+  if (!ctx) return;
+  
+  activePackets = activePackets.filter((packet) => {
+    packet.progress += packet.speed;
+    if (packet.progress >= 1) return false;
+
+    const currentX = packet.startX + (packet.endX - packet.startX) * packet.progress;
+    const currentY = packet.startY + (packet.endY - packet.startY) * packet.progress;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(currentX, currentY, packet.size, 0, 2 * Math.PI);
+    ctx.fillStyle = packet.color;
+    
+    ctx.shadowColor = packet.color;
+    ctx.shadowBlur = 10;
+    
+    ctx.fill();
+    ctx.restore();
+
+    return true;
+  });
+}
+
+function animationLoop() {
+  drawTopology();
+  updateAndDrawPackets();
+  
+  requestAnimationFrame(animationLoop);
+}
 
 async function refresh() {
   try {
@@ -546,7 +669,10 @@ async function refresh() {
     }
 
     const state = await fetchState();
-    drawTopology(state);
+    latestState = state;
+    
+    triggerPacketsFromState(state);
+    
     renderRouterCards(state);
   } catch (error) {
     console.error("CRASH DANS REFRESH:", error);
@@ -556,4 +682,6 @@ async function refresh() {
 window.addEventListener("DOMContentLoaded", () => {
   refresh();
   setInterval(refresh, POLL_INTERVAL_MS);
+  
+  requestAnimationFrame(animationLoop);
 });
