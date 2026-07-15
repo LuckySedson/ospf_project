@@ -223,9 +223,6 @@ def remove_router(router_id):
             if is_running(other_id):
                 post_admin(config["status_port"], "/admin/remove_link", {"peer_port": target_port})
 
-    # 2) purger immediatement l'entree LSDB du routeur supprime chez TOUS les routeurs actifs
-    #    (pas seulement les voisins directs : sinon sa trace reste visible ailleurs
-    #    jusqu'a expiration naturelle du LSA, ~40s)
     for other_id, config in router_configs.items():
         if other_id == router_id:
             continue
@@ -240,6 +237,55 @@ def remove_router(router_id):
     load_router_configs()
     return jsonify({"ok": True})
 
+@app.route("/api/update_link_cost", methods=["POST"])
+def update_link_cost():
+    load_router_configs()
+    
+    data = request.json
+    r1_id = (data.get("r1") or "").strip()
+    r2_id = (data.get("r2") or "").strip()
+    
+    try:
+        new_cost = int(data.get("cost"))
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "Le coût doit être un nombre valide"}), 400
+
+    print(f"[DEBUG] Demande de modification de coût entre '{r1_id}' et '{r2_id}' -> Nouveau coût : {new_cost}")
+    print(f"[DEBUG] Routeurs actuellement configurés sur le disque : {list(router_configs.keys())}")
+
+    r1_cfg = next((cfg for rid, cfg in router_configs.items() if rid.lower() == r1_id.lower()), None)
+    r2_cfg = next((cfg for rid, cfg in router_configs.items() if rid.lower() == r2_id.lower()), None)
+
+    if not r1_cfg or not r2_cfg:
+        print(f"[DEBUG] Échec : r1_trouvé={r1_cfg is not None}, r2_trouvé={r2_cfg is not None}")
+        return jsonify({"ok": False, "error": "Routeur(s) introuvable(s)"}), 404
+
+    updated_r1 = False
+    updated_r2 = False
+
+    for link in r1_cfg.get("links", []):
+        if link.get("peer_port") == r2_cfg.get("port"):
+            link["cost"] = new_cost
+            updated_r1 = True
+
+    for link in r2_cfg.get("links", []):
+        if link.get("peer_port") == r1_cfg.get("port"):
+            link["cost"] = new_cost
+            updated_r2 = True
+
+    if updated_r1:
+        save_config(r1_cfg)
+    if updated_r2:
+        save_config(r2_cfg)
+
+    load_router_configs()
+
+    if is_running(r1_id):
+        post_admin(r1_cfg["status_port"], "/admin/update_link", {"peer_port": r2_cfg["port"], "cost": new_cost})
+    if is_running(r2_id):
+        post_admin(r2_cfg["status_port"], "/admin/update_link", {"peer_port": r1_cfg["port"], "cost": new_cost})
+
+    return jsonify({"ok": True})
 
 if __name__ == "__main__":
     load_router_configs()

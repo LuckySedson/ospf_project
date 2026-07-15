@@ -5,11 +5,15 @@
   "links": [
     {
       "peer_port": 9001,
-      "cost": 1
+      "cost": 5
     },
     {
       "peer_port": 9003,
       "cost": 1
+    },
+    {
+      "peer_port": 9004,
+      "cost": 5
     }
   ]
 }

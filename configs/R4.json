@@ -1,7 +1,7 @@
 {
-  "router_id": "R1",
-  "port": 9001,
-  "status_port": 9101,
+  "router_id": "R4",
+  "port": 9004,
+  "status_port": 9104,
   "links": [
     {
       "peer_port": 9002,
@@ -9,7 +9,7 @@
     },
     {
       "peer_port": 9003,
-      "cost": 5
+      "cost": 3
     }
   ]
 }

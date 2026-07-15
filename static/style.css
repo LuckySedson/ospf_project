@@ -8,6 +8,9 @@
   --danger: #ff5c5c;
   --warn: #ffb84d;
   --down: #3a4552;
+  --highlight: #3498db;  /* Bleu Source */
+  --target: #e74c3c;     /* Rouge Dest */
+  --path: #ffd700;       /* Or Chemin */
 }
 
 * { box-sizing: border-box; }
@@ -45,11 +48,33 @@ header h1 {
   font-family: inherit;
   font-size: 13px;
   border-radius: 4px;
+  transition: all 0.2s ease;
 }
 
 .btn:hover { border-color: var(--accent); }
 .btn-primary { color: var(--accent); }
 .btn-danger { color: var(--danger); }
+
+/* --- NOUVEAU : Encart d'instructions pour les clics --- */
+.instructions {
+  background: rgba(51, 230, 168, 0.05);
+  border-left: 3px solid var(--accent);
+  padding: 10px 16px;
+  margin: 16px 24px 0 24px;
+  font-size: 12.5px;
+  color: var(--text);
+  border-radius: 0 4px 4px 0;
+}
+
+.instructions kbd {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--path); /* Couleur or pour ressortir */
+  font-size: 11px;
+}
+/* -------------------------------------------------------- */
 
 main {
   display: flex;
@@ -65,7 +90,10 @@ main {
   padding: 8px;
 }
 
-#topology { display: block; }
+#topology { 
+  display: block; 
+  cursor: crosshair; /* Indique que la carte est cliquable */
+}
 
 .routers-panel {
   flex: 1;
@@ -80,6 +108,11 @@ main {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 12px 16px;
+  transition: border-color 0.3s ease;
+}
+
+.router-card:hover {
+  border-color: #2c3e50;
 }
 
 .router-card-header {
@@ -185,193 +218,7 @@ th { color: var(--muted); font-weight: normal; }
   border-radius: 4px;
 }
 
-:root {
-  --bg: #0b0f14;
-  --panel: #121821;
-  --border: #1f2b38;
-  --text: #d6e2ef;
-  --muted: #6b7d8f;
-  --accent: #33e6a8;
-  --danger: #ff5c5c;
-  --warn: #ffb84d;
-  --down: #3a4552;
-}
-
-* { box-sizing: border-box; }
-
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: "Consolas", "Courier New", monospace;
-}
-
-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 24px;
-  border-bottom: 1px solid var(--border);
-}
-
-header h1 {
-  font-size: 18px;
-  margin: 0;
-  color: var(--accent);
-  letter-spacing: 0.5px;
-}
-
-.controls .btn { margin-left: 8px; }
-
-.btn {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 8px 14px;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 13px;
-  border-radius: 4px;
-}
-
-.btn:hover { border-color: var(--accent); }
-.btn-primary { color: var(--accent); }
-.btn-danger { color: var(--danger); }
-
-main {
-  display: flex;
-  gap: 16px;
-  padding: 16px 24px;
-  flex-wrap: wrap;
-}
-
-.topology-panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px;
-}
-
-#topology { display: block; }
-
-.routers-panel {
-  flex: 1;
-  min-width: 320px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.router-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px 16px;
-}
-
-.router-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.router-card-header h2 {
-  font-size: 15px;
-  margin: 0;
-  color: var(--accent);
-}
-
-.badge {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-}
-
-.badge.running { color: var(--accent); border-color: var(--accent); }
-.badge.stopped { color: var(--muted); }
-
-.router-actions button {
-  margin-left: 6px;
-  padding: 4px 10px;
-  font-size: 12px;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-  margin-top: 6px;
-}
-
-th, td {
-  text-align: left;
-  padding: 3px 6px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text);
-}
-
-th { color: var(--muted); font-weight: normal; }
-
-.section-label {
-  color: var(--muted);
-  font-size: 11px;
-  text-transform: uppercase;
-  margin-top: 10px;
-  letter-spacing: 0.5px;
-}
-
-.state-full { color: var(--accent); }
-.state-init { color: var(--warn); }
-.state-down { color: var(--muted); }
-
-.add-router-panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px 16px;
-  margin: 0 24px 24px 24px;
-}
-
-.add-router-panel h2 {
-  font-size: 15px;
-  color: var(--accent);
-  margin: 0 0 10px 0;
-}
-
-.form-row {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
-}
-
-.form-row input {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 6px 8px;
-  border-radius: 4px;
-  font-family: inherit;
-}
-
-.link-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  margin-bottom: 4px;
-}
-
-.link-row input[type="number"] {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
+/* Modales */
 .modal-overlay {
   position: fixed;
   inset: 0;

@@ -14,6 +14,12 @@ let routersMeta = {};
 let portToRouterId = {};
 let lastRouterIdsKey = "";
 
+let selectedSourceId = null;
+let selectedDestId = null;
+let activeShortestPath = [];
+let latestState = {};
+let latestPositions = {}; // Stocke les positions globales pour gérer les clics
+
 function showConfirmModal(title, message) {
   return new Promise((resolve) => {
     modalTitle.textContent = title;
@@ -166,18 +172,28 @@ function drawTopology(state) {
   if (!ctx) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  // Si aucun state n'est fourni (ex: appel depuis le click), on utilise le dernier state connu
+  if (state) {
+    latestState = state;
+  } else {
+    state = latestState || {};
+  }
+
   const routerIds = Object.keys(routersMeta).sort();
   if (routerIds.length === 0) return;
 
   const positions = computePositions(routerIds);
+  latestPositions = positions; // Sauvegarde pour la détection de clics
 
   routerIds.forEach((id) => {
     const config = routersMeta[id];
-    config.links.forEach((link) => {
-      const peerId = portToRouterId[link.peer_port];
-      if (!peerId || !positions[peerId]) return;
-      drawEdge(positions[id], positions[peerId], "#3a4552", true, null);
-    });
+    if (config && config.links) {
+      config.links.forEach((link) => {
+        const peerId = portToRouterId[link.peer_port];
+        if (!peerId || !positions[peerId]) return;
+        drawEdge(positions[id], positions[peerId], "#3a4552", true, null);
+      });
+    }
   });
 
   routerIds.forEach((id) => {
@@ -185,7 +201,19 @@ function drawTopology(state) {
     if (!s || !s.neighbors) return;
     Object.values(s.neighbors).forEach((n) => {
       if (n.state === "FULL" && n.peer_id && positions[n.peer_id]) {
-        drawEdge(positions[id], positions[n.peer_id], "#33e6a8", false, n.cost);
+        
+        const indexA = activeShortestPath.indexOf(id);
+        const indexB = activeShortestPath.indexOf(n.peer_id);
+        const isShortestPathLink = (indexA !== -1 && indexB !== -1 && Math.abs(indexA - indexB) === 1);
+
+        if (isShortestPathLink) {
+          ctx.shadowColor = "#ffd700";
+          ctx.shadowBlur = 12;
+          drawEdge(positions[id], positions[n.peer_id], "#ffd700", false, n.cost);
+          ctx.shadowBlur = 0;
+        } else {
+          drawEdge(positions[id], positions[n.peer_id], "#33e6a8", false, n.cost);
+        }
       }
     });
   });
@@ -193,15 +221,28 @@ function drawTopology(state) {
   routerIds.forEach((id) => {
     const pos = positions[id];
     const running = state[id] && state[id].running;
+    
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, 26, 0, 2 * Math.PI);
-    ctx.fillStyle = running ? "#121821" : "#0b0f14";
+
+    if (id === selectedSourceId) {
+      ctx.fillStyle = "#3498db";
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 4;
+    } else if (id === selectedDestId) {
+      ctx.fillStyle = "#e74c3c";
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 4;
+    } else {
+      ctx.fillStyle = running ? "#121821" : "#0b0f14";
+      ctx.strokeStyle = running ? "#33e6a8" : "#3a4552";
+      ctx.lineWidth = 2;
+    }
+    
     ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = running ? "#33e6a8" : "#3a4552";
     ctx.stroke();
 
-    ctx.fillStyle = running ? "#d6e2ef" : "#6b7d8f";
+    ctx.fillStyle = (id === selectedSourceId || id === selectedDestId) ? "#ffffff" : (running ? "#d6e2ef" : "#6b7d8f");
     ctx.font = "13px Consolas";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -328,6 +369,171 @@ function renderRouterCards(state) {
       routersPanel.appendChild(renderRouterCard(id, state[id]));
     });
 }
+
+function getDistanceToSegment(x, y, x1, y1, x2, y2) {
+    const A = x - x1;
+    const B = y - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    let param = -1;
+    if (lenSq !== 0) param = dot / lenSq;
+
+    let xx, yy;
+    if (param < 0) {
+        xx = x1;
+        yy = y1;
+    } else if (param > 1) {
+        xx = x2;
+        yy = y2;
+    } else {
+        xx = x1 + param * C;
+        yy = y1 + param * D;
+    }
+
+    const dx = x - xx;
+    const dy = y - yy;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+function computeActiveShortestPath() {
+  if (!selectedSourceId || !selectedDestId) {
+    activeShortestPath = [];
+    return;
+  }
+
+  const path = [];
+  let current = selectedSourceId;
+  const visited = new Set();
+  const maxHops = 10;
+
+  while (current && current !== selectedDestId && path.length < maxHops) {
+    if (visited.has(current)) break;
+    visited.add(current);
+    path.push(current);
+
+    const rState = latestState[current];
+    if (!rState || !rState.routing_table || !rState.routing_table[selectedDestId]) {
+      activeShortestPath = [];
+      return;
+    }
+
+    current = rState.routing_table[selectedDestId].next_hop;
+  }
+
+  if (current === selectedDestId) {
+    path.push(selectedDestId);
+    activeShortestPath = path;
+  } else {
+    activeShortestPath = [];
+  }
+}
+
+canvas.addEventListener("click", async (event) => {
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = event.clientX - rect.left;
+  const mouseY = event.clientY - rect.top;
+
+  let clickedRouter = null;
+
+  // Détection du clic sur un nœud (routeur) via latestPositions
+  for (const [id, pos] of Object.entries(latestPositions)) {
+    const dist = Math.hypot(mouseX - pos.x, mouseY - pos.y);
+    if (dist < 26) { // Rayon de 26 pixels correspondant à drawTopology
+      clickedRouter = { router_id: id, x: pos.x, y: pos.y };
+      break;
+    }
+  }
+
+  if (clickedRouter) {
+    if (event.shiftKey) {
+      if (selectedSourceId === clickedRouter.router_id) {
+        alert("La destination ne peut pas être identique à la source !");
+        return;
+      }
+      selectedDestId = clickedRouter.router_id;
+    } else {
+      selectedSourceId = clickedRouter.router_id;
+      if (selectedDestId === selectedSourceId) {
+        selectedDestId = null;
+      }
+    }
+    computeActiveShortestPath();
+    drawTopology();
+    return;
+  }
+
+  // Reconstruction dynamique des liens existants pour détecter un clic sur une ligne
+  const links = [];
+  Object.keys(routersMeta).forEach((id) => {
+    const config = routersMeta[id];
+    if (config && config.links) {
+      config.links.forEach((link) => {
+        const peerId = portToRouterId[link.peer_port];
+        // id < peerId permet d'éviter de traiter deux fois le même lien bidirectionnel
+        if (peerId && id < peerId) {
+          links.push({ from: id, to: peerId, cost: link.cost });
+        }
+      });
+    }
+  });
+
+  // Détection du clic sur un lien
+  for (const link of links) {
+    const n1 = latestPositions[link.from];
+    const n2 = latestPositions[link.to];
+    if (!n1 || !n2) continue;
+
+    const distToLink = getDistanceToSegment(mouseX, mouseY, n1.x, n1.y, n2.x, n2.y);
+    if (distToLink < 8) {
+      const newCostStr = prompt(`Modifier le coût du lien ${link.from} <-> ${link.to} :`, link.cost);
+      if (newCostStr === null) return;
+
+      const newCost = parseInt(newCostStr, 10);
+      if (isNaN(newCost) || newCost <= 0) {
+        alert("Veuillez entrer un coût entier strictement supérieur à 0.");
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/update_link_cost", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ r1: link.from, r2: link.to, cost: newCost })
+        });
+        const res = await response.json();
+        if (res.ok) {
+          // Mise à jour locale immédiate en attendant le prochain poll
+          if (routersMeta[link.from]) {
+            const l = routersMeta[link.from].links.find(x => portToRouterId[x.peer_port] === link.to);
+            if (l) l.cost = newCost;
+          }
+          if (routersMeta[link.to]) {
+            const l = routersMeta[link.to].links.find(x => portToRouterId[x.peer_port] === link.from);
+            if (l) l.cost = newCost;
+          }
+          
+          computeActiveShortestPath();
+          drawTopology();
+        } else {
+          alert(`Erreur : ${res.error}`);
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Erreur réseau lors de la mise à jour du coût.");
+      }
+      return;
+    }
+  }
+
+  // Clic dans le vide : reset de la sélection
+  selectedSourceId = null;
+  selectedDestId = null;
+  activeShortestPath = [];
+  drawTopology();
+});
 
 async function refresh() {
   try {

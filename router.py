@@ -60,6 +60,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         elif self.path == "/admin/remove_link":
             self.router_ref.admin_remove_link(payload["peer_port"])
             self._send_json({"ok": True})
+        elif self.path == "/admin/update_link":
+            self.router_ref.admin_update_link(payload["peer_port"], payload["cost"])
+            self._send_json({"ok": True})
         else:
             self.send_response(404)
             self.end_headers()
@@ -205,6 +208,17 @@ class Router:
         graph = build_graph(self.lsdb.snapshot())
         self.routing_table = compute_routing_table(graph, self.router_id)
         self.log.info(f"Table de routage: {self.routing_table}")
+    
+    def admin_update_link(self, peer_port, cost):
+        for link in self.links_config:
+            if link.get("peer_port") == peer_port:
+                link["cost"] = cost
+                break
+
+        self.neighbor_manager.add_neighbor(peer_port, cost)
+        self.log.info(f"Lien mis à jour dynamiquement vers le port {peer_port} (nouveau coût {cost})")
+
+        self.emit_lsa()
 
 
 def main():
@@ -214,7 +228,6 @@ def main():
 
     config = load_config(args.config)
     router = Router(config)
-    router.start()
     
     try:
         router.start()

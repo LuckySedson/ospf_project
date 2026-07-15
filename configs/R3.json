@@ -10,6 +10,10 @@
     {
       "peer_port": 9002,
       "cost": 1
+    },
+    {
+      "peer_port": 9004,
+      "cost": 3
     }
   ]
 }
