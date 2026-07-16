@@ -11,6 +11,22 @@
     <div class="controls">
       <button id="btn-start-all" class="btn btn-primary">Démarrer tout</button>
       <button id="btn-stop-all" class="btn btn-danger">Arrêter tout</button>
+      <button id="btn-ping" class="btn" style="background-color: #3498db; color: white;">Simuler Ping</button>
+    </div>
+    <!-- Le terminal de simulation Ping (masqué par défaut avec la classe "hidden") -->
+    <div id="ping-console" class="terminal-console hidden">
+      <div class="terminal-header">
+        <div class="terminal-controls">
+          <!-- On utilise le bouton rouge pour fermer et le jaune pour réduire -->
+          <span class="terminal-dot red" id="btn-close-terminal" title="Fermer"></span>
+          <span class="terminal-dot yellow" id="btn-minimize-terminal" title="Réduire / Agrandir"></span>
+          <span class="terminal-dot green"></span>
+        </div>
+        <span class="terminal-title">Terminal - Ping OSPF</span>
+      </div>
+      <div id="console-output" class="terminal-body">
+        <div class="system-msg">> En attente du lancement d'un ping...</div>
+      </div>
     </div>
   </header>
 

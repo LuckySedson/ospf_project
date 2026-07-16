@@ -247,6 +247,87 @@ th { color: var(--muted); font-weight: normal; }
   to { transform: scale(1); opacity: 1; }
 }
 
+/* Terminal de base */
+.terminal-console {
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  margin-top: 15px;
+  max-width: 800px;
+  overflow: hidden;
+  width: 100%;
+  transition: all 0.3s ease; /* Transition fluide lors de la réduction */
+}
+
+/* 1. État Masqué (complètement invisible) */
+.terminal-console.hidden {
+  display: none !important;
+}
+
+/* 2. État Réduit (on réduit la hauteur du corps à 0) */
+.terminal-console.minimized .terminal-body {
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border: none;
+}
+
+.terminal-header {
+  align-items: center;
+  background-color: #2b2b2b;
+  border-bottom: 1px solid #333;
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+}
+
+.terminal-controls {
+  display: flex;
+  align-items: center;
+}
+
+.terminal-dot {
+  border-radius: 50%;
+  display: inline-block;
+  height: 12px;
+  width: 12px;
+  margin-right: 6px;
+  cursor: pointer;
+  transition: filter 0.2s;
+}
+
+.terminal-dot:hover {
+  filter: brightness(1.3); /* Effet de survol sur les boutons */
+}
+
+.terminal-dot.red { background-color: #ff5f56; }
+.terminal-dot.yellow { background-color: #ffbd2e; }
+.terminal-dot.green { background-color: #27c93f; cursor: default; }
+
+.terminal-title {
+  color: #999;
+  font-size: 11px;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.terminal-body {
+  height: 160px;
+  line-height: 1.6;
+  overflow-y: auto;
+  padding: 15px;
+  transition: height 0.3s ease, padding 0.3s ease; /* Effet glissant */
+}
+
+/* Couleurs des messages */
+.system-msg { color: #888; }
+.info-msg { color: #3498db; }
+.success-msg { color: #2ecc71; }
+.warning-msg { color: #e67e22; }
+
 .modal-icon {
   font-size: 28px;
   color: var(--danger);

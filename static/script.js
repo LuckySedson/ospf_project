@@ -631,7 +631,14 @@ function updateAndDrawPackets() {
   
   activePackets = activePackets.filter((packet) => {
     packet.progress += packet.speed;
-    if (packet.progress >= 1) return false;
+    
+    if (packet.progress >= 1) {
+      // Si le paquet possède une action à exécuter à l'arrivée (cas du Ping)
+      if (typeof packet.onArrive === "function") {
+        packet.onArrive();
+      }
+      return false;
+    }
 
     const currentX = packet.startX + (packet.endX - packet.startX) * packet.progress;
     const currentY = packet.startY + (packet.endY - packet.startY) * packet.progress;
@@ -649,6 +656,107 @@ function updateAndDrawPackets() {
 
     return true;
   });
+}
+
+// Fonction utilitaire pour écrire dans le terminal
+function logToConsole(text, type = "info") {
+  const consoleBody = document.getElementById("console-output");
+  if (!consoleBody) return;
+  
+  const line = document.createElement("div");
+  line.className = type + "-msg";
+  
+  // Petit timestamp optionnel pour le style
+  const now = new Date();
+  const timeStr = `[${now.toLocaleTimeString()}] `;
+  
+  line.textContent = timeStr + text;
+  consoleBody.appendChild(line);
+  
+  // Scroll automatique vers le bas pour toujours voir le dernier log
+  consoleBody.scrollTop = consoleBody.scrollHeight;
+}
+
+// Fonction pour vider la console
+function clearConsole() {
+  const consoleBody = document.getElementById("console-output");
+  if (consoleBody) consoleBody.innerHTML = "";
+}
+
+function spawnPathPacket(path, index, isReply) {
+  if (index >= path.length - 1) return;
+
+  const fromId = path[index];
+  const toId = path[index + 1];
+  const startPos = latestPositions[fromId];
+  const endPos = latestPositions[toId];
+  if (!startPos || !endPos) return;
+
+  activePackets.push({
+    fromId,
+    toId,
+    startX: startPos.x,
+    startY: startPos.y,
+    endX: endPos.x,
+    endY: endPos.y,
+    progress: 0,
+    speed: 0.025,
+    color: isReply ? "#33e6a8" : "#3498db",
+    size: 7,
+    onArrive: () => {
+      // 1. On loggue le franchissement du saut actuel
+      const stepType = isReply ? "RETOUR" : "ALLER";
+      logToConsole(`[${stepType}] Transit : Routeur ${fromId} ➔ Routeur ${toId}`, "system");
+
+      // Si le trajet en cours n'est pas terminé (il reste des routeurs sur le chemin)
+      if (index + 1 < path.length - 1) {
+        spawnPathPacket(path, index + 1, isReply);
+      } 
+      // Si la bille d'ALLER arrive enfin au routeur cible
+      else if (!isReply) {
+        logToConsole(`[DESTINATION] Routeur ${toId} a reçu l'Echo Request (allumage jaune).`, "success");
+        logToConsole(`Renvoi de l'Echo Reply (Pong vert)...`, "info");
+        
+        const replyPath = [...path].reverse();
+        setTimeout(() => {
+          spawnPathPacket(replyPath, 0, true);
+        }, 300);
+      } 
+      // Si la bille de RETOUR est enfin revenue au point de départ
+      else {
+        // RTT calculé proportionnellement au nombre de sauts avec un petit aléa
+        const fakeRtt = Math.round((path.length - 1) * 15 + Math.random() * 10);
+        
+        logToConsole(`Réponse de Routeur ${selectedDestId} : octets=32 temps=${fakeRtt}ms TTL=64`, "success");
+        logToConsole(`--------------------------------------------------`, "system");
+        logToConsole(`Statistiques Ping : Envoyés = 1, Reçus = 1, Perdus = 0 (0% de perte)`, "success");
+      }
+    }
+  });
+}
+
+function startPingSimulation() {
+  if (!selectedSourceId || !selectedDestId || activeShortestPath.length === 0) {
+    alert("Veuillez d'abord sélectionner une source et une destination avec un chemin valide (en jaune).");
+    return;
+  }
+  
+  // Récupère l'élément du terminal
+  const consoleEl = document.getElementById("ping-console");
+  if (consoleEl) {
+    // Affiche le terminal s'il était masqué et l'agrandit s'il était réduit
+    consoleEl.classList.remove("hidden");
+    consoleEl.classList.remove("minimized");
+  }
+  
+  // Nettoie l'écran de commande
+  clearConsole();
+  
+  logToConsole(`Envoi d'une requête ping sur Routeur ${selectedDestId} avec 32 octets de données :`, "info");
+  logToConsole(`Route identifiée par OSPF : ${activeShortestPath.join(" ➔ ")}`, "system");
+  
+  // Lance le premier saut
+  spawnPathPacket(activeShortestPath, 0, false);
 }
 
 function animationLoop() {
@@ -682,6 +790,25 @@ async function refresh() {
 window.addEventListener("DOMContentLoaded", () => {
   refresh();
   setInterval(refresh, POLL_INTERVAL_MS);
+  
+  // Écoute le clic sur le bouton Ping
+  document.getElementById("btn-ping").addEventListener("click", startPingSimulation);
+  
+  // BOUTON ROUGE : Fermer (masquer complètement) le terminal
+  const btnClose = document.getElementById("btn-close-terminal");
+  if (btnClose) {
+    btnClose.addEventListener("click", () => {
+      document.getElementById("ping-console").classList.add("hidden");
+    });
+  }
+
+  // BOUTON JAUNE : Réduire / Agrandir (toggle la classe minimized)
+  const btnMinimize = document.getElementById("btn-minimize-terminal");
+  if (btnMinimize) {
+    btnMinimize.addEventListener("click", () => {
+      document.getElementById("ping-console").classList.toggle("minimized");
+    });
+  }
   
   requestAnimationFrame(animationLoop);
 });
