@@ -6,6 +6,8 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  
+  <!-- En-tête de l'application -->
   <header>
     <h1>OSPF — Simulateur de routage par état de lien</h1>
     <div class="controls">
@@ -13,49 +15,56 @@
       <button id="btn-stop-all" class="btn btn-danger">Arrêter tout</button>
       <button id="btn-ping" class="btn" style="background-color: #3498db; color: white;">Simuler Ping</button>
     </div>
-    <!-- Le terminal de simulation Ping (masqué par défaut avec la classe "hidden") -->
-    <div id="ping-console" class="terminal-console hidden">
-      <div class="terminal-header">
-        <div class="terminal-controls">
-          <!-- On utilise le bouton rouge pour fermer et le jaune pour réduire -->
-          <span class="terminal-dot red" id="btn-close-terminal" title="Fermer"></span>
-          <span class="terminal-dot yellow" id="btn-minimize-terminal" title="Réduire / Agrandir"></span>
-          <span class="terminal-dot green"></span>
-        </div>
-        <span class="terminal-title">Terminal - Ping OSPF</span>
-      </div>
-      <div id="console-output" class="terminal-body">
-        <div class="system-msg">> En attente du lancement d'un ping...</div>
-      </div>
-    </div>
   </header>
 
-  <div class="instructions">
-    <strong>Contrôles interactifs :</strong>
-    Clic gauche = <span style="color: var(--highlight);">Définir Source</span> | 
-    <kbd>Shift</kbd> + Clic = <span style="color: var(--target);">Définir Destination</span> | 
-    Clic sur un lien = Changer le coût
-  </div>
-
+  <!-- Conteneur principal en double colonne -->
   <main>
-    <section class="topology-panel">
-      <canvas id="topology" width="700" height="500"></canvas>
-    </section>
+    <div class="left-column">
+      <div class="instructions">
+        <strong>Contrôles interactifs :</strong>
+        Clic gauche = <span style="color: var(--highlight);">Définir Source</span> | 
+        <kbd>Shift</kbd> + Clic = <span style="color: var(--target);">Définir Destination</span> | 
+        Clic sur un lien = Changer le coût
+      </div>
 
+      <!-- Le terminal de simulation Ping (masqué par défaut) -->
+      <div id="ping-console" class="terminal-console hidden">
+        <div class="terminal-header">
+          <div class="terminal-controls">
+            <span class="terminal-dot red" id="btn-close-terminal" title="Fermer"></span>
+            <span class="terminal-dot yellow" id="btn-minimize-terminal" title="Réduire / Agrandir"></span>
+            <span class="terminal-dot green"></span>
+          </div>
+          <span class="terminal-title">Terminal - Ping OSPF</span>
+        </div>
+        <div id="console-output" class="terminal-body">
+          <div class="system-msg">> En attente du lancement d'un ping...</div>
+        </div>
+      </div>
+
+      <!-- Panneau du Canvas de topologie -->
+      <section class="topology-panel">
+        <canvas id="topology" width="700" height="500"></canvas>
+      </section>
+
+      <!-- Panneau de configuration pour ajouter un routeur -->
+      <section class="add-router-panel">
+        <h2>Ajouter un routeur</h2>
+        <div class="form-row">
+          <input type="text" id="new-router-id" placeholder="ID (ex: R4)" />
+          <input type="number" id="new-router-port" placeholder="Port UDP (ex: 9004)" />
+          <input type="number" id="new-router-status-port" placeholder="Port statut (ex: 9104)" />
+        </div>
+        <div id="new-router-links"></div>
+        <button id="btn-add-router" class="btn btn-primary">Créer le routeur</button>
+      </section>
+
+    </div>
     <section class="routers-panel" id="routers-panel"></section>
+
   </main>
 
-  <section class="add-router-panel">
-    <h2>Ajouter un routeur</h2>
-    <div class="form-row">
-      <input type="text" id="new-router-id" placeholder="ID (ex: R4)" />
-      <input type="number" id="new-router-port" placeholder="Port UDP (ex: 9004)" />
-      <input type="number" id="new-router-status-port" placeholder="Port statut (ex: 9104)" />
-    </div>
-    <div id="new-router-links"></div>
-    <button id="btn-add-router" class="btn btn-primary">Créer le routeur</button>
-  </section>
-
+  <!-- Fenêtre modale de confirmation -->
   <div id="modal-overlay" class="modal-overlay hidden">
     <div class="modal-box">
       <div class="modal-icon">⚠</div>
