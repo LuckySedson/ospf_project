@@ -1,0 +1,17 @@
+{
+  "router_id": "R5",
+  "port": 9005,
+  "status_port": 9105,
+  "links": [
+    {
+      "peer_port": 9001,
+      "cost": 1000,
+      "bandwidth": 100
+    },
+    {
+      "peer_port": 9004,
+      "cost": 10000,
+      "bandwidth": 10
+    }
+  ]
+}

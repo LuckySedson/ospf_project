@@ -13,6 +13,12 @@ STATIC_DIR = BASE_DIR / "static"
 PYTHON = sys.executable
 HOST = "127.0.0.1"
 
+REFERENCE_BANDWIDTH_MBPS = 100000  # 100 Gbps : cout OSPF = reference / bande_passante_du_lien
+
+
+def compute_cost(bandwidth_mbps):
+    return max(1, REFERENCE_BANDWIDTH_MBPS // bandwidth_mbps)
+
 app = Flask(__name__, static_folder=None)
 
 processes = {}
@@ -170,12 +176,16 @@ def add_router():
     resolved_links = []
     for link in peer_links:
         peer_id = link.get("peer_id")
-        cost = link.get("cost")
+        bandwidth = link.get("bandwidth")
         if peer_id not in router_configs:
             return jsonify({"ok": False, "error": f"routeur inconnu: {peer_id}"}), 400
+        if not isinstance(bandwidth, int) or bandwidth <= 0:
+            return jsonify({"ok": False, "error": "bande passante invalide"}), 400
+        cost = compute_cost(bandwidth)
         resolved_links.append({
             "peer_port": router_configs[peer_id]["port"],
             "cost": cost,
+            "bandwidth": bandwidth,
             "peer_id": peer_id,
         })
 
@@ -183,7 +193,7 @@ def add_router():
         "router_id": router_id,
         "port": port,
         "status_port": status_port,
-        "links": [{"peer_port": l["peer_port"], "cost": l["cost"]} for l in resolved_links],
+        "links": [{"peer_port": l["peer_port"], "cost": l["cost"], "bandwidth": l["bandwidth"]} for l in resolved_links],
     }
     save_config(new_config)
 
@@ -191,7 +201,7 @@ def add_router():
         peer_config = router_configs[link["peer_id"]]
         already = any(l["peer_port"] == port for l in peer_config["links"])
         if not already:
-            peer_config["links"].append({"peer_port": port, "cost": link["cost"]})
+            peer_config["links"].append({"peer_port": port, "cost": link["cost"], "bandwidth": link["bandwidth"]})
             save_config(peer_config)
 
         if is_running(link["peer_id"]):
@@ -237,27 +247,27 @@ def remove_router(router_id):
     load_router_configs()
     return jsonify({"ok": True})
 
-@app.route("/api/update_link_cost", methods=["POST"])
-def update_link_cost():
+@app.route("/api/update_link_bandwidth", methods=["POST"])
+def update_link_bandwidth():
     load_router_configs()
-    
+
     data = request.json
     r1_id = (data.get("r1") or "").strip()
     r2_id = (data.get("r2") or "").strip()
-    
-    try:
-        new_cost = int(data.get("cost"))
-    except (ValueError, TypeError):
-        return jsonify({"ok": False, "error": "Le coût doit être un nombre valide"}), 400
 
-    print(f"[DEBUG] Demande de modification de coût entre '{r1_id}' et '{r2_id}' -> Nouveau coût : {new_cost}")
-    print(f"[DEBUG] Routeurs actuellement configurés sur le disque : {list(router_configs.keys())}")
+    try:
+        bandwidth = int(data.get("bandwidth"))
+        if bandwidth <= 0:
+            raise ValueError
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "La bande passante doit être un nombre entier positif"}), 400
+
+    new_cost = compute_cost(bandwidth)
 
     r1_cfg = next((cfg for rid, cfg in router_configs.items() if rid.lower() == r1_id.lower()), None)
     r2_cfg = next((cfg for rid, cfg in router_configs.items() if rid.lower() == r2_id.lower()), None)
 
     if not r1_cfg or not r2_cfg:
-        print(f"[DEBUG] Échec : r1_trouvé={r1_cfg is not None}, r2_trouvé={r2_cfg is not None}")
         return jsonify({"ok": False, "error": "Routeur(s) introuvable(s)"}), 404
 
     updated_r1 = False
@@ -266,11 +276,13 @@ def update_link_cost():
     for link in r1_cfg.get("links", []):
         if link.get("peer_port") == r2_cfg.get("port"):
             link["cost"] = new_cost
+            link["bandwidth"] = bandwidth
             updated_r1 = True
 
     for link in r2_cfg.get("links", []):
         if link.get("peer_port") == r1_cfg.get("port"):
             link["cost"] = new_cost
+            link["bandwidth"] = bandwidth
             updated_r2 = True
 
     if updated_r1:
@@ -285,7 +297,7 @@ def update_link_cost():
     if is_running(r2_id):
         post_admin(r2_cfg["status_port"], "/admin/update_link", {"peer_port": r1_cfg["port"], "cost": new_cost})
 
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "cost": new_cost})
 
 @app.route("/api/routers/edit/<old_id>", methods=["POST"])
 def edit_router(old_id):

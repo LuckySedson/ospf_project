@@ -10,6 +10,11 @@
     {
       "peer_port": 9003,
       "cost": 5
+    },
+    {
+      "peer_port": 9005,
+      "cost": 1000,
+      "bandwidth": 100
     }
   ]
 }

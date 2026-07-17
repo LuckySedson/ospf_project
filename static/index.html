@@ -24,7 +24,7 @@
         <strong>Contrôles interactifs :</strong>
         Clic gauche = <span style="color: var(--highlight);">Définir Source</span> | 
         <kbd>Shift</kbd> + Clic = <span style="color: var(--target);">Définir Destination</span> | 
-        Clic sur un lien = Changer le coût
+        Clic sur un lien = <span>Changer la bande passante</span>
       </div>
 
       <!-- Le terminal de simulation Ping (masqué par défaut) -->
@@ -71,6 +71,7 @@
       <h3 id="modal-title">Confirmer</h3>
       <p id="modal-message"></p>
       <input type="number" id="modal-input" class="modal-input hidden" />
+      <select id="modal-select" class="modal-input hidden"></select>
       <div class="modal-actions">
         <button id="modal-cancel" class="btn">Annuler</button>
         <button id="modal-confirm" class="btn btn-danger">Confirmer</button>

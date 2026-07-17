@@ -30,6 +30,22 @@ let activePackets = [];
 const modalIcon = document.getElementById("modal-icon");
 const modalInput = document.getElementById("modal-input");
 
+const modalSelect = document.getElementById("modal-select");
+
+const BANDWIDTH_PRESETS = [
+  { label: "10 Mbps", value: 10 },
+  { label: "100 Mbps", value: 100 },
+  { label: "1 Gbps", value: 1000 },
+  { label: "10 Gbps", value: 10000 },
+  { label: "100 Gbps", value: 100000 },
+  { label: "Personnalisé...", value: "custom" },
+];
+
+function formatBandwidth(mbps) {
+  if (!mbps) return "—";
+  return mbps >= 1000 ? mbps / 1000 + " Gbps" : mbps + " Mbps";
+}
+
 function showModal({
   type = "confirm",
   title = "",
@@ -104,6 +120,69 @@ function showAlert(title, message, kind = "error") {
 
 function showPrompt(title, message, defaultValue) {
   return showModal({ type: "prompt", title, message, icon: "✎", iconClass: "icon-info", inputValue: defaultValue, confirmLabel: "Appliquer", confirmClass: "btn-primary" });
+}
+
+function showBandwidthModal(title, message, currentBandwidth) {
+  return new Promise((resolve) => {
+    modalTitle.textContent = title;
+    modalMessage.textContent = message;
+    modalIcon.textContent = "📶";
+    modalIcon.className = "modal-icon icon-info";
+    modalConfirm.textContent = "Appliquer";
+    modalConfirm.className = "btn btn-primary";
+    modalCancel.classList.remove("hidden");
+    modalCancel.textContent = "Annuler";
+
+    modalSelect.innerHTML = "";
+    BANDWIDTH_PRESETS.forEach((opt) => {
+      const o = document.createElement("option");
+      o.value = opt.value;
+      o.textContent = opt.label;
+      modalSelect.appendChild(o);
+    });
+    const preset = BANDWIDTH_PRESETS.find((o) => o.value === currentBandwidth);
+    modalSelect.value = preset ? preset.value : "custom";
+    modalSelect.classList.remove("hidden");
+
+    const syncCustomInput = () => {
+      if (modalSelect.value === "custom") {
+        modalInput.classList.remove("hidden");
+        modalInput.value = preset ? "" : currentBandwidth || "";
+      } else {
+        modalInput.classList.add("hidden");
+      }
+    };
+    syncCustomInput();
+
+    modalOverlay.classList.remove("hidden");
+
+    const cleanup = (result) => {
+      modalOverlay.classList.add("hidden");
+      modalSelect.classList.add("hidden");
+      modalInput.classList.add("hidden");
+      modalConfirm.removeEventListener("click", onConfirm);
+      modalCancel.removeEventListener("click", onCancel);
+      modalOverlay.removeEventListener("click", onOverlayClick);
+      modalSelect.removeEventListener("change", syncCustomInput);
+      resolve(result);
+    };
+
+    const onConfirm = () => {
+      const bw = modalSelect.value === "custom" ? parseInt(modalInput.value, 10) : parseInt(modalSelect.value, 10);
+      if (!Number.isFinite(bw) || bw <= 0) {
+        cleanup(null);
+        return;
+      }
+      cleanup(bw);
+    };
+    const onCancel = () => cleanup(null);
+    const onOverlayClick = (e) => { if (e.target === modalOverlay) cleanup(null); };
+
+    modalSelect.addEventListener("change", syncCustomInput);
+    modalConfirm.addEventListener("click", onConfirm);
+    modalCancel.addEventListener("click", onCancel);
+    modalOverlay.addEventListener("click", onOverlayClick);
+  });
 }
 
 function friendlyError(rawError) {
@@ -244,8 +323,8 @@ document.getElementById("btn-add-router").addEventListener("click", async () => 
   document.querySelectorAll(".link-checkbox").forEach((cb) => {
     if (cb.checked) {
       const peer = cb.dataset.peer;
-      const costInput = document.querySelector(`.link-cost[data-peer="${peer}"]`);
-      links.push({ peer_id: peer, cost: parseInt(costInput.value, 10) || 1 });
+      const bwSelect = document.querySelector(`.link-bandwidth[data-peer="${peer}"]`);
+      links.push({ peer_id: peer, bandwidth: parseInt(bwSelect.value, 10) });
     }
   });
 
@@ -304,7 +383,13 @@ function renderAddRouterForm() {
           <input type="checkbox" class="link-checkbox" data-peer="${id}" />
           Lien vers ${id}
         </label>
-        <input type="number" class="link-cost" data-peer="${id}" value="1" min="1" />
+        <select class="link-bandwidth" data-peer="${id}">
+          <option value="10">10 Mbps</option>
+          <option value="100">100 Mbps</option>
+          <option value="1000" selected>1 Gbps</option>
+          <option value="10000">10 Gbps</option>
+          <option value="100000">100 Gbps</option>
+        </select>
       `;
       container.appendChild(row);
     });
@@ -455,16 +540,19 @@ function renderRouterCard(id, s) {
   card.className = "router-card";
 
   const neighborsRows = s && s.neighbors
-    ? Object.values(s.neighbors)
-        .map(
-          (n) => `<tr>
-            <td>${n.peer_id ?? "-"}</td>
-            <td class="${stateClass(n.state)}">${n.state}</td>
-            <td>${n.cost}</td>
-          </tr>`
-        )
-        .join("")
-    : "";
+  ? Object.entries(s.neighbors)
+      .map(([port, n]) => {
+        const linkCfg = routersMeta[id] && routersMeta[id].links.find((l) => String(l.peer_port) === String(port));
+        const bwLabel = linkCfg ? formatBandwidth(linkCfg.bandwidth) : "—";
+        return `<tr>
+          <td>${n.peer_id ?? "-"}</td>
+          <td class="${stateClass(n.state)}">${n.state}</td>
+          <td>${bwLabel}</td>
+          <td>${n.cost}</td>
+        </tr>`;
+      })
+      .join("")
+  : "";
 
   const lsdbRows = s && s.lsdb
     ? Object.entries(s.lsdb)
@@ -506,7 +594,7 @@ function renderRouterCard(id, s) {
 
     <div class="section-label">Voisins</div>
     <table>
-      <thead><tr><th>Peer</th><th>Etat</th><th>Cout</th></tr></thead>
+      <thead><tr><th>Peer</th><th>Etat</th><th>Bande passante</th><th>Cout</th></tr></thead>
       <tbody>${neighborsRows}</tbody>
     </table>
 
@@ -620,7 +708,7 @@ function findEdgeAt(x, y) {
       config.links.forEach((link) => {
         const peerId = portToRouterId[link.peer_port];
         if (peerId && id < peerId) {
-          links.push({ from: id, to: peerId, cost: link.cost });
+          links.push({ from: id, to: peerId, cost: link.cost, bandwidth: link.bandwidth });
         }
       });
     }
@@ -657,43 +745,37 @@ function handleNodeClick(clickedId, shiftKey) {
 }
 
 async function handleEdgeClick(link) {
-  const newCostStr = await showPrompt(
-    "Modifier le coût du lien",
-    `Nouveau coût pour le lien ${link.from} ↔ ${link.to} :`,
-    link.cost
+  const bw = await showBandwidthModal(
+    "Modifier la bande passante",
+    `Bande passante du lien ${link.from} ↔ ${link.to} (le coût OSPF est recalculé automatiquement) :`,
+    link.bandwidth
   );
-  if (newCostStr === null) return;
-
-  const newCost = parseInt(newCostStr, 10);
-  if (isNaN(newCost) || newCost <= 0) {
-    await showAlert("Valeur invalide", "Veuillez entrer un coût entier strictement supérieur à 0.", "error");
-    return;
-  }
+  if (bw === null) return;
 
   try {
-    const response = await fetch("/api/update_link_cost", {
+    const response = await fetch("/api/update_link_bandwidth", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ r1: link.from, r2: link.to, cost: newCost }),
+      body: JSON.stringify({ r1: link.from, r2: link.to, bandwidth: bw }),
     });
     const res = await response.json();
     if (res.ok) {
       if (routersMeta[link.from]) {
         const l = routersMeta[link.from].links.find((x) => portToRouterId[x.peer_port] === link.to);
-        if (l) l.cost = newCost;
+        if (l) { l.cost = res.cost; l.bandwidth = bw; }
       }
       if (routersMeta[link.to]) {
         const l = routersMeta[link.to].links.find((x) => portToRouterId[x.peer_port] === link.from);
-        if (l) l.cost = newCost;
+        if (l) { l.cost = res.cost; l.bandwidth = bw; }
       }
       computeActiveShortestPath();
-      await showAlert("Coût mis à jour", `Le lien ${link.from} ↔ ${link.to} a maintenant un coût de ${newCost}.`, "success");
+      await showAlert("Lien mis à jour", `Bande passante : ${formatBandwidth(bw)} → coût OSPF calculé : ${res.cost}.`, "success");
     } else {
       await showAlert("Erreur", friendlyError(res.error), "error");
     }
   } catch (err) {
     console.error(err);
-    await showAlert("Erreur réseau", "Impossible de contacter le serveur pour mettre à jour le coût.", "error");
+    await showAlert("Erreur réseau", "Impossible de contacter le serveur pour mettre à jour le lien.", "error");
   }
 }
 
