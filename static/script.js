@@ -20,32 +20,99 @@ let activeShortestPath = [];
 let latestState = {};
 let latestPositions = {};
 
+let nodePositions = {};
+let draggingId = null;
+let dragStart = null;
+let dragMoved = false;
+
 let activePackets = [];
 
-function showConfirmModal(title, message) {
+const modalIcon = document.getElementById("modal-icon");
+const modalInput = document.getElementById("modal-input");
+
+function showModal({
+  type = "confirm",
+  title = "",
+  message = "",
+  icon = "⚠",
+  iconClass = "icon-error",
+  inputValue = "",
+  confirmLabel = "Confirmer",
+  cancelLabel = "Annuler",
+  confirmClass = "btn-danger",
+} = {}) {
   return new Promise((resolve) => {
     modalTitle.textContent = title;
     modalMessage.textContent = message;
+    modalIcon.textContent = icon;
+    modalIcon.className = "modal-icon " + iconClass;
+
+    modalConfirm.textContent = confirmLabel;
+    modalConfirm.className = "btn " + confirmClass;
+
+    if (type === "prompt") {
+      modalInput.classList.remove("hidden");
+      modalInput.value = inputValue;
+    } else {
+      modalInput.classList.add("hidden");
+    }
+
+    if (type === "alert") {
+      modalCancel.classList.add("hidden");
+    } else {
+      modalCancel.classList.remove("hidden");
+      modalCancel.textContent = cancelLabel;
+    }
+
     modalOverlay.classList.remove("hidden");
+    if (type === "prompt") setTimeout(() => modalInput.focus(), 50);
 
     const cleanup = (result) => {
       modalOverlay.classList.add("hidden");
       modalConfirm.removeEventListener("click", onConfirm);
       modalCancel.removeEventListener("click", onCancel);
       modalOverlay.removeEventListener("click", onOverlayClick);
+      modalInput.removeEventListener("keydown", onKeydown);
       resolve(result);
     };
 
-    const onConfirm = () => cleanup(true);
-    const onCancel = () => cleanup(false);
+    const onConfirm = () => cleanup(type === "prompt" ? modalInput.value : true);
+    const onCancel = () => cleanup(type === "prompt" ? null : false);
     const onOverlayClick = (e) => {
-      if (e.target === modalOverlay) cleanup(false);
+      if (e.target === modalOverlay) cleanup(type === "prompt" ? null : false);
+    };
+    const onKeydown = (e) => {
+      if (e.key === "Enter") onConfirm();
     };
 
     modalConfirm.addEventListener("click", onConfirm);
     modalCancel.addEventListener("click", onCancel);
     modalOverlay.addEventListener("click", onOverlayClick);
+    modalInput.addEventListener("keydown", onKeydown);
   });
+}
+
+function showConfirm(title, message) {
+  return showModal({ type: "confirm", title, message, icon: "⚠", iconClass: "icon-error", confirmLabel: "Confirmer", confirmClass: "btn-danger" });
+}
+
+function showAlert(title, message, kind = "error") {
+  const icons = { error: "✕", success: "✓", info: "ℹ" };
+  const classes = { error: "icon-error", success: "icon-success", info: "icon-info" };
+  return showModal({ type: "alert", title, message, icon: icons[kind], iconClass: classes[kind], confirmLabel: "OK", confirmClass: kind === "success" ? "btn-primary" : "btn-danger" });
+}
+
+function showPrompt(title, message, defaultValue) {
+  return showModal({ type: "prompt", title, message, icon: "✎", iconClass: "icon-info", inputValue: defaultValue, confirmLabel: "Appliquer", confirmClass: "btn-primary" });
+}
+
+function friendlyError(rawError) {
+  const map = {
+    "champs manquants": "Merci de remplir tous les champs obligatoires.",
+    "router_id deja utilise": "Ce nom de routeur (ID) est déjà utilisé par un autre routeur.",
+    "port deja utilise": "Le port UDP ou le port de statut choisi est déjà utilisé par un autre routeur.",
+  };
+  return map[rawError] || rawError;
 }
 
 async function fetchRouters() {
@@ -76,7 +143,7 @@ async function stopRouter(id) {
 }
 
 async function removeRouter(id) {
-  const confirmed = await showConfirmModal(
+  const confirmed = await showConfirm(
     "Supprimer le routeur",
     `Es-tu sûr de vouloir supprimer définitivement ${id} ? Cette action est irréversible.`
   );
@@ -85,6 +152,8 @@ async function removeRouter(id) {
   await fetch(`/api/routers/remove/${id}`, { method: "POST" });
   lastRouterIdsKey = "";
   await refresh();
+
+  await showAlert("Routeur supprimé", `Le routeur ${id} a bien été supprimé.`, "success");
 }
 
 document.getElementById("btn-start-all").addEventListener("click", async () => {
@@ -103,7 +172,7 @@ document.getElementById("btn-add-router").addEventListener("click", async () => 
   const status_port = parseInt(document.getElementById("new-router-status-port").value, 10);
 
   if (!router_id || !port || !status_port) {
-    alert("Merci de remplir l'ID, le port UDP et le port de statut.");
+    await showAlert("Champs manquants", "Merci de remplir l'ID, le port UDP et le port de statut.", "error");
     return;
   }
 
@@ -124,7 +193,7 @@ document.getElementById("btn-add-router").addEventListener("click", async () => 
   const data = await res.json();
 
   if (!data.ok) {
-    alert("Erreur: " + data.error);
+    await showAlert("Impossible d'ajouter le routeur", friendlyError(data.error), "error");
     return;
   }
 
@@ -132,7 +201,9 @@ document.getElementById("btn-add-router").addEventListener("click", async () => 
   document.getElementById("new-router-port").value = "";
   document.getElementById("new-router-status-port").value = "";
   lastRouterIdsKey = "";
-  refresh();
+  await refresh();
+
+  await showAlert("Routeur ajouté", `Le routeur ${router_id} a été créé avec succès.`, "success");
 });
 
 function getPhysicalLinks() {
@@ -175,20 +246,25 @@ function renderAddRouterForm() {
     });
 }
 
-function computePositions(routerIds) {
-  const positions = {};
+function ensurePositions(routerIds) {
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
   const radius = Math.min(cx, cy) - 60;
   const n = routerIds.length;
+
   routerIds.forEach((id, i) => {
-    const angle = (2 * Math.PI * i) / n - Math.PI / 2;
-    positions[id] = {
-      x: cx + radius * Math.cos(angle),
-      y: cy + radius * Math.sin(angle),
-    };
+    if (!nodePositions[id]) {
+      const angle = (2 * Math.PI * i) / n - Math.PI / 2;
+      nodePositions[id] = {
+        x: cx + radius * Math.cos(angle),
+        y: cy + radius * Math.sin(angle),
+      };
+    }
   });
-  return positions;
+
+  Object.keys(nodePositions).forEach((id) => {
+    if (!routerIds.includes(id)) delete nodePositions[id];
+  });
 }
 
 function drawTopology(state) {
@@ -204,7 +280,8 @@ function drawTopology(state) {
   const routerIds = Object.keys(routersMeta).sort();
   if (routerIds.length === 0) return;
 
-  const positions = computePositions(routerIds);
+  ensurePositions(routerIds);
+  const positions = nodePositions;
   latestPositions = positions;
 
   const drawnDashed = new Set();
@@ -462,106 +539,162 @@ function computeActiveShortestPath() {
   }
 }
 
-canvas.addEventListener("click", async (event) => {
-  const rect = canvas.getBoundingClientRect();
-  
-  const mouseX = (event.clientX - rect.left) * (canvas.width / rect.width);
-  const mouseY = (event.clientY - rect.top) * (canvas.height / rect.height);
+function findNodeAt(x, y) {
+  for (const [id, pos] of Object.entries(nodePositions)) {
+    if (Math.hypot(x - pos.x, y - pos.y) < 26) return id;
+  }
+  return null;
+}
 
-  let clickedRouter = null;
+function findEdgeAt(x, y) {
+  const links = [];
+  Object.keys(routersMeta).forEach((id) => {
+    const config = routersMeta[id];
+    if (config && config.links) {
+      config.links.forEach((link) => {
+        const peerId = portToRouterId[link.peer_port];
+        if (peerId && id < peerId) {
+          links.push({ from: id, to: peerId, cost: link.cost });
+        }
+      });
+    }
+  });
 
-  for (const [id, pos] of Object.entries(latestPositions)) {
-    const dist = Math.hypot(mouseX - pos.x, mouseY - pos.y);
-    if (dist < 26) {
-      clickedRouter = { router_id: id, x: pos.x, y: pos.y };
-      break;
+  for (const link of links) {
+    const n1 = nodePositions[link.from];
+    const n2 = nodePositions[link.to];
+    if (!n1 || !n2) continue;
+    if (getDistanceToSegment(x, y, n1.x, n1.y, n2.x, n2.y) < 8) return link;
+  }
+  return null;
+}
+
+function handleNodeClick(clickedId, shiftKey) {
+  if (shiftKey) {
+    if (selectedSourceId === clickedId) {
+      alert("La destination ne peut pas être identique à la source !");
+      return;
+    }
+    selectedDestId = clickedId;
+  } else {
+    if (!selectedSourceId) {
+      selectedSourceId = clickedId;
+    } else if (selectedSourceId && !selectedDestId) {
+      selectedSourceId = clickedId === selectedSourceId ? null : selectedSourceId;
+      if (clickedId !== selectedSourceId) selectedDestId = clickedId;
+    } else {
+      selectedSourceId = clickedId;
+      selectedDestId = null;
     }
   }
+  computeActiveShortestPath();
+}
 
-  if (clickedRouter) {
-    const clickedId = clickedRouter.router_id;
+async function handleEdgeClick(link) {
+  const newCostStr = await showPrompt(
+    "Modifier le coût du lien",
+    `Nouveau coût pour le lien ${link.from} ↔ ${link.to} :`,
+    link.cost
+  );
+  if (newCostStr === null) return;
 
-    if (event.shiftKey) {
-      if (selectedSourceId === clickedId) {
-        alert("La destination ne peut pas être identique à la source !");
-        return;
-      }
-      selectedDestId = clickedId;
-    } else {
-      if (!selectedSourceId) {
-        selectedSourceId = clickedId;
-      } else if (selectedSourceId && !selectedDestId) {
-        if (clickedId === selectedSourceId) {
-          selectedSourceId = null;
-        } else {
-          selectedDestId = clickedId;
-        }
-      } else {
-        selectedSourceId = clickedId;
-        selectedDestId = null;
-      }
-    }
-    computeActiveShortestPath();
-    drawTopology();
+  const newCost = parseInt(newCostStr, 10);
+  if (isNaN(newCost) || newCost <= 0) {
+    await showAlert("Valeur invalide", "Veuillez entrer un coût entier strictement supérieur à 0.", "error");
     return;
   }
 
-  const links = getPhysicalLinks();
-
-  for (const link of links) {
-    const n1 = latestPositions[link.from];
-    const n2 = latestPositions[link.to];
-    if (!n1 || !n2) continue;
-
-    const distToLink = getDistanceToSegment(mouseX, mouseY, n1.x, n1.y, n2.x, n2.y);
-    if (distToLink < 8) {
-      const newCostStr = prompt(`Modifier le coût du lien ${link.from} <-> ${link.to} :`, link.cost);
-      if (newCostStr === null) return;
-
-      const newCost = parseInt(newCostStr, 10);
-      if (isNaN(newCost) || newCost <= 0) {
-        alert("Veuillez entrer un coût entier strictement supérieur à 0.");
-        return;
+  try {
+    const response = await fetch("/api/update_link_cost", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ r1: link.from, r2: link.to, cost: newCost }),
+    });
+    const res = await response.json();
+    if (res.ok) {
+      if (routersMeta[link.from]) {
+        const l = routersMeta[link.from].links.find((x) => portToRouterId[x.peer_port] === link.to);
+        if (l) l.cost = newCost;
       }
-
-      try {
-        const response = await fetch("/api/update_link_cost", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ r1: link.from, r2: link.to, cost: newCost })
-        });
-        const res = await response.json();
-        if (res.ok) {
-          if (routersMeta[link.from]) {
-            const l = routersMeta[link.from].links.find(x => portToRouterId[x.peer_port] === link.to);
-            if (l) l.cost = newCost;
-          }
-          if (routersMeta[link.to]) {
-            const l = routersMeta[link.to].links.find(x => portToRouterId[x.peer_port] === link.from);
-            if (l) l.cost = newCost;
-          }
-          
-          computeActiveShortestPath();
-          drawTopology();
-        } else {
-          alert(`Erreur : ${res.error}`);
-        }
-      } catch (err) {
-        console.error(err);
-        alert("Erreur réseau lors de la mise à jour du coût.");
+      if (routersMeta[link.to]) {
+        const l = routersMeta[link.to].links.find((x) => portToRouterId[x.peer_port] === link.from);
+        if (l) l.cost = newCost;
       }
-      return;
+      computeActiveShortestPath();
+      await showAlert("Coût mis à jour", `Le lien ${link.from} ↔ ${link.to} a maintenant un coût de ${newCost}.`, "success");
+    } else {
+      await showAlert("Erreur", friendlyError(res.error), "error");
     }
+  } catch (err) {
+    console.error(err);
+    await showAlert("Erreur réseau", "Impossible de contacter le serveur pour mettre à jour le coût.", "error");
+  }
+}
+
+canvas.addEventListener("mousedown", (event) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  const hitId = findNodeAt(x, y);
+  if (hitId) {
+    draggingId = hitId;
+    dragMoved = false;
+    dragStart = { x, y };
+    canvas.style.cursor = "grabbing";
+  }
+});
+
+window.addEventListener("mousemove", (event) => {
+  if (!draggingId) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+
+  if (!dragMoved && Math.hypot(x - dragStart.x, y - dragStart.y) > 4) {
+    dragMoved = true;
+  }
+
+  const margin = 30;
+  nodePositions[draggingId] = {
+    x: Math.min(Math.max(x, margin), canvas.width - margin),
+    y: Math.min(Math.max(y, margin), canvas.height - margin),
+  };
+});
+
+window.addEventListener("mouseup", (event) => {
+  if (!draggingId) return;
+  const wasDrag = dragMoved;
+  const releasedId = draggingId;
+  draggingId = null;
+  dragMoved = false;
+  canvas.style.cursor = "default";
+
+  if (!wasDrag) {
+    handleNodeClick(releasedId, event.shiftKey);
+  }
+});
+
+canvas.addEventListener("click", (event) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+
+  if (findNodeAt(x, y)) return;
+
+  const edge = findEdgeAt(x, y);
+  if (edge) {
+    handleEdgeClick(edge);
+    return;
   }
 
   selectedSourceId = null;
   selectedDestId = null;
   activeShortestPath = [];
-  drawTopology();
 });
 
 if (canvas) {
   canvas.addEventListener("mousemove", (event) => {
+    if (draggingId) return;
     const rect = canvas.getBoundingClientRect();
     
     const mouseX = (event.clientX - rect.left) * (canvas.width / rect.width);
