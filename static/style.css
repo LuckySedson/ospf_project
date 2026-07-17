@@ -441,6 +441,22 @@ th { color: var(--muted); font-weight: normal; }
   text-align: center;
 }
 
+.btn-edit {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+.btn-edit:hover {
+  background: rgba(255, 184, 77, 0.1);
+}
+
+.btn-remove {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.btn-remove:hover {
+  background: rgba(255, 92, 92, 0.1);
+}
+
 .modal-input.hidden { display: none; }
 
 .modal-icon.icon-error { color: var(--danger); }

@@ -498,8 +498,8 @@ function renderRouterCard(id, s) {
         <span class="router-actions">
           <button class="btn btn-primary" data-action="start" data-id="${id}">Start</button>
           <button class="btn btn-danger" data-action="stop" data-id="${id}">Stop</button>
-          <button class="btn" data-action="edit" data-id="${id}">Modifier</button>
-          <button class="btn" data-action="remove" data-id="${id}">Suppr.</button>
+          <button class="btn btn-edit" data-action="edit" data-id="${id}">Modifier</button>
+          <button class="btn btn-remove" data-action="remove" data-id="${id}">Suppr.</button>
         </span>
       </div>
     </div>
