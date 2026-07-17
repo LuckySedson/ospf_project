@@ -156,6 +156,70 @@ async function removeRouter(id) {
   await showAlert("Routeur supprimé", `Le routeur ${id} a bien été supprimé.`, "success");
 }
 
+const editModalOverlay = document.getElementById("edit-modal-overlay");
+const editRouterIdInput = document.getElementById("edit-router-id");
+const editRouterPortInput = document.getElementById("edit-router-port");
+const editRouterStatusPortInput = document.getElementById("edit-router-status-port");
+const editModalConfirm = document.getElementById("edit-modal-confirm");
+const editModalCancel = document.getElementById("edit-modal-cancel");
+
+function openEditRouterModal(id) {
+  const meta = routersMeta[id];
+  if (!meta) return;
+
+  editRouterIdInput.value = id;
+  editRouterPortInput.value = meta.port;
+  editRouterStatusPortInput.value = meta.status_port;
+  editModalOverlay.classList.remove("hidden");
+
+  const cleanup = () => {
+    editModalOverlay.classList.add("hidden");
+    editModalConfirm.removeEventListener("click", onConfirm);
+    editModalCancel.removeEventListener("click", onCancel);
+    editModalOverlay.removeEventListener("click", onOverlayClick);
+  };
+
+  const onConfirm = async () => {
+    const newId = editRouterIdInput.value.trim();
+    const newPort = parseInt(editRouterPortInput.value, 10);
+    const newStatusPort = parseInt(editRouterStatusPortInput.value, 10);
+
+    if (!newId || !newPort || !newStatusPort) {
+      await showAlert("Champs manquants", "Merci de remplir l'ID, le port UDP et le port de statut.", "error");
+      return;
+    }
+
+    cleanup();
+
+    const res = await fetch(`/api/routers/edit/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ router_id: newId, port: newPort, status_port: newStatusPort }),
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+      await showAlert("Impossible de modifier le routeur", friendlyError(data.error), "error");
+      return;
+    }
+
+    lastRouterIdsKey = "";
+    if (nodePositions[id]) {
+      nodePositions[newId] = nodePositions[id];
+      delete nodePositions[id];
+    }
+    await refresh();
+    await showAlert("Routeur modifié", `${id} a bien été mis à jour${newId !== id ? ` (nouveau nom : ${newId})` : ""}.`, "success");
+  };
+
+  const onCancel = () => cleanup();
+  const onOverlayClick = (e) => { if (e.target === editModalOverlay) cleanup(); };
+
+  editModalConfirm.addEventListener("click", onConfirm);
+  editModalCancel.addEventListener("click", onCancel);
+  editModalOverlay.addEventListener("click", onOverlayClick);
+}
+
 document.getElementById("btn-start-all").addEventListener("click", async () => {
   await fetch("/api/start_all", { method: "POST" });
   refresh();
@@ -434,6 +498,7 @@ function renderRouterCard(id, s) {
         <span class="router-actions">
           <button class="btn btn-primary" data-action="start" data-id="${id}">Start</button>
           <button class="btn btn-danger" data-action="stop" data-id="${id}">Stop</button>
+          <button class="btn" data-action="edit" data-id="${id}">Modifier</button>
           <button class="btn" data-action="remove" data-id="${id}">Suppr.</button>
         </span>
       </div>
@@ -462,6 +527,7 @@ function renderRouterCard(id, s) {
     btn.addEventListener("click", () => {
       if (btn.dataset.action === "start") startRouter(btn.dataset.id);
       if (btn.dataset.action === "stop") stopRouter(btn.dataset.id);
+      if (btn.dataset.action === "edit") openEditRouterModal(btn.dataset.id);
       if (btn.dataset.action === "remove") removeRouter(btn.dataset.id);
     });
   });

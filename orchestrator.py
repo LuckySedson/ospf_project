@@ -287,6 +287,82 @@ def update_link_cost():
 
     return jsonify({"ok": True})
 
+@app.route("/api/routers/edit/<old_id>", methods=["POST"])
+def edit_router(old_id):
+    load_router_configs()
+    if old_id not in router_configs:
+        return jsonify({"ok": False, "error": "routeur introuvable"}), 404
+
+    data = request.get_json(force=True)
+    new_id = (data.get("router_id") or "").strip()
+    new_port = data.get("port")
+    new_status_port = data.get("status_port")
+
+    if not new_id or not new_port or not new_status_port:
+        return jsonify({"ok": False, "error": "champs manquants"}), 400
+    if new_port == new_status_port:
+        return jsonify({"ok": False, "error": "port deja utilise"}), 400
+
+    old_config = router_configs[old_id]
+    old_port = old_config["port"]
+
+    for rid, cfg in router_configs.items():
+        if rid == old_id:
+            continue
+        if rid == new_id:
+            return jsonify({"ok": False, "error": "router_id deja utilise"}), 400
+        if new_port in (cfg["port"], cfg["status_port"]) or new_status_port in (cfg["port"], cfg["status_port"]):
+            return jsonify({"ok": False, "error": "port deja utilise"}), 400
+
+    was_running = is_running(old_id)
+    if was_running:
+        processes[old_id].terminate()
+
+    for other_id, cfg in router_configs.items():
+        if other_id == old_id:
+            continue
+        if is_running(other_id):
+            post_admin(cfg["status_port"], "/admin/purge_origin", {"origin": old_id})
+
+    if new_port != old_port:
+        for other_id, cfg in router_configs.items():
+            if other_id == old_id:
+                continue
+            changed = False
+            matching_cost = 1
+            for link in cfg["links"]:
+                if link["peer_port"] == old_port:
+                    matching_cost = link["cost"]
+                    link["peer_port"] = new_port
+                    changed = True
+            if changed:
+                save_config(cfg)
+                if is_running(other_id):
+                    post_admin(cfg["status_port"], "/admin/remove_link", {"peer_port": old_port})
+                    post_admin(cfg["status_port"], "/admin/add_link", {"peer_port": new_port, "cost": matching_cost})
+
+    old_path = CONFIGS_DIR / f"{old_id}.json"
+    if old_path.exists():
+        old_path.unlink()
+
+    new_config = {
+        "router_id": new_id,
+        "port": new_port,
+        "status_port": new_status_port,
+        "links": old_config["links"],
+    }
+    save_config(new_config)
+
+    processes.pop(old_id, None)
+    load_router_configs()
+
+    if was_running:
+        config_path = CONFIGS_DIR / f"{new_id}.json"
+        proc = subprocess.Popen([PYTHON, str(BASE_DIR / "router.py"), "--config", str(config_path)])
+        processes[new_id] = proc
+
+    return jsonify({"ok": True, "router_id": new_id})
+
 if __name__ == "__main__":
     load_router_configs()
     app.run(host=HOST, port=5000, debug=False)

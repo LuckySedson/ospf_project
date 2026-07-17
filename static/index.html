@@ -78,6 +78,22 @@
     </div>
   </div>
 
+  <div id="edit-modal-overlay" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-icon icon-info">✎</div>
+      <h3>Modifier le routeur</h3>
+      <div class="form-row" style="flex-direction: column; gap: 10px;">
+        <input type="text" id="edit-router-id" placeholder="ID (ex: R4)" />
+        <input type="number" id="edit-router-port" placeholder="Port UDP" />
+        <input type="number" id="edit-router-status-port" placeholder="Port statut" />
+      </div>
+      <div class="modal-actions">
+        <button id="edit-modal-cancel" class="btn">Annuler</button>
+        <button id="edit-modal-confirm" class="btn btn-primary">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
   <script src="script.js"></script>
 </body>
 </html>
