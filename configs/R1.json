@@ -16,5 +16,16 @@
       "cost": 1000,
       "bandwidth": 100
     }
+  ],
+  "segments": [
+    {
+      "segment_id": "LAN1",
+      "priority": 10,
+      "cost": 1,
+      "peer_ports": [
+        9003,
+        9004
+      ]
+    }
   ]
 }

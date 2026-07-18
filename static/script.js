@@ -26,6 +26,7 @@ let dragStart = null;
 let dragMoved = false;
 
 let activePackets = [];
+let segmentsMeta = {};
 
 const modalIcon = document.getElementById("modal-icon");
 const modalInput = document.getElementById("modal-input");
@@ -209,6 +210,14 @@ async function fetchRouters() {
 async function fetchState() {
   const res = await fetch("/api/state");
   return res.json();
+}
+
+async function fetchSegments() {
+  const res = await fetch("/api/segments");
+  const data = await res.json();
+  segmentsMeta = {};
+  data.forEach((s) => { segmentsMeta[s.segment_id] = s; });
+  return data;
 }
 
 async function startRouter(id) {
@@ -395,13 +404,62 @@ function renderAddRouterForm() {
     });
 }
 
-function ensurePositions(routerIds) {
+function renderAddSegmentForm() {
+  const container = document.getElementById("new-segment-members");
+  container.innerHTML = "";
+  Object.keys(routersMeta).sort().forEach((id) => {
+    const row = document.createElement("div");
+    row.className = "segment-member-row";
+    row.innerHTML = `
+      <label><input type="checkbox" class="segment-member-checkbox" data-router="${id}" /> ${id}</label>
+      Priorité <input type="number" class="segment-priority" data-router="${id}" value="1" min="0" />
+      Coût <input type="number" class="segment-cost" data-router="${id}" value="1" min="1" />
+    `;
+    container.appendChild(row);
+  });
+}
+
+document.getElementById("btn-add-segment").addEventListener("click", async () => {
+  const segment_id = document.getElementById("new-segment-id").value.trim();
+  const members = [];
+  document.querySelectorAll(".segment-member-checkbox").forEach((cb) => {
+    if (cb.checked) {
+      const rid = cb.dataset.router;
+      const priority = parseInt(document.querySelector(`.segment-priority[data-router="${rid}"]`).value, 10);
+      const cost = parseInt(document.querySelector(`.segment-cost[data-router="${rid}"]`).value, 10);
+      members.push({ router_id: rid, priority, cost });
+    }
+  });
+
+  if (!segment_id || members.length < 2) {
+    await showAlert("Champs manquants", "Un ID de segment et au moins 2 routeurs cochés sont requis.", "error");
+    return;
+  }
+
+  const res = await fetch("/api/segments/add", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ segment_id, members }),
+  });
+  const data = await res.json();
+  if (!data.ok) {
+    await showAlert("Impossible de créer le segment", friendlyError(data.error), "error");
+    return;
+  }
+
+  document.getElementById("new-segment-id").value = "";
+  await refresh();
+  await showAlert("Segment créé", `Le segment ${segment_id} a été créé — l'élection DR/BDR démarre dès que les routeurs membres sont actifs.`, "success");
+});
+
+function ensurePositions(routerIds, segmentIds) {
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
   const radius = Math.min(cx, cy) - 60;
-  const n = routerIds.length;
+  const allIds = [...routerIds, ...segmentIds];
+  const n = allIds.length || 1;
 
-  routerIds.forEach((id, i) => {
+  allIds.forEach((id, i) => {
     if (!nodePositions[id]) {
       const angle = (2 * Math.PI * i) / n - Math.PI / 2;
       nodePositions[id] = {
@@ -412,7 +470,7 @@ function ensurePositions(routerIds) {
   });
 
   Object.keys(nodePositions).forEach((id) => {
-    if (!routerIds.includes(id)) delete nodePositions[id];
+    if (!allIds.includes(id)) delete nodePositions[id];
   });
 }
 
@@ -429,9 +487,63 @@ function drawTopology(state) {
   const routerIds = Object.keys(routersMeta).sort();
   if (routerIds.length === 0) return;
 
-  ensurePositions(routerIds);
+  const segmentIds = Object.keys(segmentsMeta);
+  ensurePositions(routerIds, segmentIds);
   const positions = nodePositions;
   latestPositions = positions;
+
+  segmentIds.forEach((sid) => {
+    const segPos = nodePositions[sid];
+    if (!segPos) return;
+
+    let dr = null, bdr = null;
+    for (const rid of routerIds) {
+      const segState = state[rid] && state[rid].segments && state[rid].segments[sid];
+      if (segState && segState.dr) { dr = segState.dr; bdr = segState.bdr; break; }
+    }
+
+    const segIndexInPath = activeShortestPath.indexOf(sid);
+    const segIsOnPath = segIndexInPath !== -1;
+
+    segmentsMeta[sid].members.forEach((m) => {
+      const memberPos = nodePositions[m.router_id];
+      if (!memberPos) return;
+
+      const memberIndexInPath = activeShortestPath.indexOf(m.router_id);
+      const isPathLink = segIsOnPath && memberIndexInPath !== -1 && Math.abs(segIndexInPath - memberIndexInPath) === 1;
+
+      if (isPathLink) {
+        ctx.shadowColor = "#ffd700";
+        ctx.shadowBlur = 12;
+        drawEdge(segPos, memberPos, "#ffd700", false, m.cost);
+        ctx.shadowBlur = 0;
+        return;
+      }
+
+      const isDrLink = m.router_id === dr;
+      const isBdrLink = m.router_id === bdr;
+      const color = isDrLink ? "#ffd700" : isBdrLink ? "#c0c0c0" : "#3a4552";
+      drawEdge(segPos, memberPos, color, !isDrLink && !isBdrLink, m.cost);
+    });
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(segPos.x - 22, segPos.y - 18, 44, 36);
+    ctx.fillStyle = "#121821";
+    ctx.strokeStyle = segIsOnPath ? "#ffd700" : "#3498db";
+    ctx.lineWidth = 2;
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = segIsOnPath ? "#ffd700" : "#3498db";
+    ctx.font = "11px Consolas";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(sid, segPos.x, segPos.y - 4);
+    ctx.font = "8px Consolas";
+    ctx.fillStyle = dr ? "#ffd700" : "#6b7d8f";
+    ctx.fillText(dr ? `DR:${dr}` : "élection...", segPos.x, segPos.y + 10);
+    ctx.restore();
+  });
 
   const drawnDashed = new Set();
   routerIds.forEach((id) => {
@@ -672,23 +784,41 @@ function computeActiveShortestPath() {
   const maxHops = 10;
 
   while (current && current !== selectedDestId && path.length < maxHops) {
-    if (visited.has(current)) break;
+    if (visited.has(current)) {
+      console.warn("[chemin] boucle detectee, deja visite:", current);
+      break;
+    }
     visited.add(current);
     path.push(current);
 
     const rState = latestState[current];
-    if (!rState || !rState.routing_table || !rState.routing_table[selectedDestId]) {
+    if (!rState) {
+      console.warn(`[chemin] aucun etat pour ${current} (routeur arrete ou pas dans latestState)`);
+      activeShortestPath = [];
+      return;
+    }
+    if (!rState.routing_table) {
+      console.warn(`[chemin] ${current} n'a pas de routing_table dans son etat`, rState);
+      activeShortestPath = [];
+      return;
+    }
+    if (!rState.routing_table[selectedDestId]) {
+      console.warn(`[chemin] ${current} n'a pas de route vers ${selectedDestId}. Routes connues:`, Object.keys(rState.routing_table));
       activeShortestPath = [];
       return;
     }
 
-    current = rState.routing_table[selectedDestId].next_hop;
+    const nextHop = rState.routing_table[selectedDestId].next_hop;
+    console.log(`[chemin] ${current} -> ${nextHop} (vers ${selectedDestId})`);
+    current = nextHop;
   }
 
   if (current === selectedDestId) {
     path.push(selectedDestId);
     activeShortestPath = path;
+    console.log("[chemin] chemin final:", path);
   } else {
+    console.warn("[chemin] echec, current final =", current);
     activeShortestPath = [];
   }
 }
@@ -1065,22 +1195,47 @@ function animationLoop() {
 async function refresh() {
   try {
     await fetchRouters();
+    await fetchSegments();
+    renderSegmentsList();
 
     const idsKey = Object.keys(routersMeta).sort().join(",");
     if (idsKey !== lastRouterIdsKey) {
       renderAddRouterForm();
+      renderAddSegmentForm();
       lastRouterIdsKey = idsKey;
     }
 
     const state = await fetchState();
     latestState = state;
-    
     triggerPacketsFromState(state);
-    
     renderRouterCards(state);
   } catch (error) {
     console.error("CRASH DANS REFRESH:", error);
   }
+}
+
+function renderSegmentsList() {
+  const container = document.getElementById("segments-list");
+  if (!container) return;
+  container.innerHTML = "";
+
+  Object.keys(segmentsMeta).sort().forEach((sid) => {
+    const row = document.createElement("div");
+    row.className = "segment-member-row";
+    const members = segmentsMeta[sid].members.map((m) => m.router_id).join(", ");
+    row.innerHTML = `
+      <span>${sid} (${members})</span>
+      <button class="btn btn-remove" data-segment="${sid}">Suppr.</button>
+    `;
+    row.querySelector("button").addEventListener("click", async () => {
+      const confirmed = await showConfirm("Supprimer le segment", `Supprimer définitivement ${sid} ?`);
+      if (!confirmed) return;
+      await fetch(`/api/segments/remove/${sid}`, { method: "POST" });
+      await refresh();
+      await showAlert("Segment supprimé", `${sid} a bien été supprimé.`, "success");
+    });
+    container.appendChild(row);
+  });
 }
 
 window.addEventListener("DOMContentLoaded", () => {

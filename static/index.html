@@ -59,6 +59,20 @@
         <button id="btn-add-router" class="btn btn-primary">Créer le routeur</button>
       </section>
 
+      <section class="add-router-panel">
+        <h2>Ajouter un segment (réseau multi-accès, élection DR/BDR)</h2>
+        <div class="form-row">
+          <input type="text" id="new-segment-id" placeholder="ID segment (ex: LAN1)" />
+        </div>
+        <div id="new-segment-members"></div>
+        <button id="btn-add-segment" class="btn btn-primary">Créer le segment</button>
+      </section>
+
+      <section class="add-router-panel">
+        <h2>Segments existants</h2>
+        <div id="segments-list"></div>
+      </section>
+
     </div>
     <section class="routers-panel" id="routers-panel"></section>
 

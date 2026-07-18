@@ -15,5 +15,16 @@
       "peer_port": 9004,
       "cost": 3
     }
+  ],
+  "segments": [
+    {
+      "segment_id": "LAN1",
+      "priority": 5,
+      "cost": 1,
+      "peer_ports": [
+        9001,
+        9004
+      ]
+    }
   ]
 }

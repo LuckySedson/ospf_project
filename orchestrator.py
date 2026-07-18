@@ -24,6 +24,9 @@ app = Flask(__name__, static_folder=None)
 processes = {}
 router_configs = {}
 
+SEGMENTS_DIR = CONFIGS_DIR / "segments"
+SEGMENTS_DIR.mkdir(parents=True, exist_ok=True)
+segment_configs = {}
 
 def load_router_configs():
     router_configs.clear()
@@ -32,6 +35,18 @@ def load_router_configs():
             config = json.load(f)
         router_configs[config["router_id"]] = config
 
+def load_segment_configs():
+    segment_configs.clear()
+    for path in sorted(SEGMENTS_DIR.glob("*.json")):
+        with open(path) as f:
+            config = json.load(f)
+        segment_configs[config["segment_id"]] = config
+
+
+def save_segment_config(config):
+    path = SEGMENTS_DIR / f"{config['segment_id']}.json"
+    with open(path, "w") as f:
+        json.dump(config, f, indent=2)
 
 def save_config(config):
     path = CONFIGS_DIR / f"{config['router_id']}.json"
@@ -374,6 +389,87 @@ def edit_router(old_id):
         processes[new_id] = proc
 
     return jsonify({"ok": True, "router_id": new_id})
+
+@app.route("/api/segments")
+def list_segments():
+    load_segment_configs()
+    return jsonify(list(segment_configs.values()))
+
+
+@app.route("/api/segments/add", methods=["POST"])
+def add_segment():
+    load_router_configs()
+    load_segment_configs()
+    data = request.get_json(force=True)
+
+    segment_id = (data.get("segment_id") or "").strip()
+    members = data.get("members", [])
+
+    if not segment_id:
+        return jsonify({"ok": False, "error": "champs manquants"}), 400
+    if segment_id in segment_configs:
+        return jsonify({"ok": False, "error": "segment_id deja utilise"}), 400
+    if len(members) < 2:
+        return jsonify({"ok": False, "error": "un segment necessite au moins 2 routeurs"}), 400
+
+    for m in members:
+        if m.get("router_id") not in router_configs:
+            return jsonify({"ok": False, "error": f"routeur inconnu: {m.get('router_id')}"}), 400
+        if not isinstance(m.get("priority"), int) or m["priority"] < 0:
+            return jsonify({"ok": False, "error": "priorite invalide"}), 400
+        if not isinstance(m.get("cost"), int) or m["cost"] <= 0:
+            return jsonify({"ok": False, "error": "cout invalide"}), 400
+
+    save_segment_config({"segment_id": segment_id, "members": members})
+
+    for m in members:
+        rid = m["router_id"]
+        cfg = router_configs[rid]
+        peer_ports = [router_configs[o["router_id"]]["port"] for o in members if o["router_id"] != rid]
+
+        cfg.setdefault("segments", [])
+        cfg["segments"] = [s for s in cfg["segments"] if s["segment_id"] != segment_id]
+        cfg["segments"].append({
+            "segment_id": segment_id,
+            "priority": m["priority"],
+            "cost": m["cost"],
+            "peer_ports": peer_ports,
+        })
+        save_config(cfg)
+
+        if is_running(rid):
+            post_admin(cfg["status_port"], "/admin/add_segment", {
+                "segment_id": segment_id, "priority": m["priority"], "cost": m["cost"], "peer_ports": peer_ports,
+            })
+
+    load_router_configs()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/segments/remove/<segment_id>", methods=["POST"])
+def remove_segment(segment_id):
+    load_router_configs()
+    load_segment_configs()
+    if segment_id not in segment_configs:
+        return jsonify({"ok": False, "error": "segment introuvable"}), 404
+
+    for m in segment_configs[segment_id]["members"]:
+        rid = m["router_id"]
+        if rid not in router_configs:
+            continue
+        cfg = router_configs[rid]
+        cfg["segments"] = [s for s in cfg.get("segments", []) if s["segment_id"] != segment_id]
+        save_config(cfg)
+        if is_running(rid):
+            post_admin(cfg["status_port"], "/admin/remove_segment", {"segment_id": segment_id})
+
+    path = SEGMENTS_DIR / f"{segment_id}.json"
+    if path.exists():
+        path.unlink()
+
+    load_router_configs()
+    load_segment_configs()
+    return jsonify({"ok": True})
 
 if __name__ == "__main__":
     load_router_configs()

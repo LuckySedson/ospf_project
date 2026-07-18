@@ -2,7 +2,7 @@ import json
 
 HELLO = "HELLO"
 LSA = "LSA"
-
+SEGMENT_HELLO = "SEGMENT_HELLO"
 
 def build_hello(origin, seen_neighbors):
     payload = {
@@ -28,3 +28,15 @@ def parse_message(data):
         return json.loads(data.decode())
     except (ValueError, UnicodeDecodeError):
         return None
+    
+
+def build_segment_hello(origin, segment_id, priority, dr, bdr):
+    payload = {
+        "type": SEGMENT_HELLO,
+        "origin": origin,
+        "segment_id": segment_id,
+        "priority": priority,
+        "dr": dr,
+        "bdr": bdr,
+    }
+    return json.dumps(payload).encode()
