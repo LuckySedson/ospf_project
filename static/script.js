@@ -327,6 +327,12 @@ document.getElementById("btn-stop-all").addEventListener("click", async () => {
   refresh();
 });
 
+document.getElementById("btn-theme-toggle").addEventListener("click", () => {
+  isLightMode = !isLightMode;
+  localStorage.setItem("ospf-theme", isLightMode ? "light" : "dark");
+  applyTheme();
+});
+
 document.getElementById("btn-add-router").addEventListener("click", async () => {
   const router_id = document.getElementById("new-router-id").value.trim();
   const port = parseInt(document.getElementById("new-router-port").value, 10);
@@ -498,6 +504,7 @@ function drawTopology(state) {
   const routerIds = Object.keys(routersMeta).sort();
   if (routerIds.length === 0) return;
 
+  const colors = getThemeColors();
   const segmentIds = Object.keys(segmentsMeta);
   ensurePositions(routerIds, segmentIds);
   const positions = nodePositions;
@@ -524,34 +531,34 @@ function drawTopology(state) {
       const isPathLink = segIsOnPath && memberIndexInPath !== -1 && Math.abs(segIndexInPath - memberIndexInPath) === 1;
 
       if (isPathLink) {
-        ctx.shadowColor = "#ffd700";
+        ctx.shadowColor = colors.pathLink;
         ctx.shadowBlur = 12;
-        drawEdge(segPos, memberPos, "#ffd700", false, m.cost);
+        drawEdge(segPos, memberPos, colors.pathLink, false, m.cost, colors.labelColor);
         ctx.shadowBlur = 0;
         return;
       }
 
       const isDrLink = m.router_id === dr;
       const isBdrLink = m.router_id === bdr;
-      const color = isDrLink ? "#ffd700" : isBdrLink ? "#c0c0c0" : "#3a4552";
-      drawEdge(segPos, memberPos, color, !isDrLink && !isBdrLink, m.cost);
+      const color = isDrLink ? colors.drLink : isBdrLink ? colors.bdrLink : colors.dashedLink;
+      drawEdge(segPos, memberPos, color, !isDrLink && !isBdrLink, m.cost, colors.labelColor);
     });
 
     ctx.save();
     ctx.beginPath();
     ctx.rect(segPos.x - 22, segPos.y - 18, 44, 36);
-    ctx.fillStyle = "#121821";
-    ctx.strokeStyle = segIsOnPath ? "#ffd700" : "#3498db";
+    ctx.fillStyle = colors.segmentBg;
+    ctx.strokeStyle = segIsOnPath ? colors.pathLink : colors.segmentBorder;
     ctx.lineWidth = 2;
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = segIsOnPath ? "#ffd700" : "#3498db";
+    ctx.fillStyle = segIsOnPath ? colors.pathLink : colors.segmentText;
     ctx.font = "11px Consolas";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(sid, segPos.x, segPos.y - 4);
     ctx.font = "8px Consolas";
-    ctx.fillStyle = dr ? "#ffd700" : "#6b7d8f";
+    ctx.fillStyle = dr ? colors.pathLink : colors.textInactive;
     ctx.fillText(dr ? `DR:${dr}` : "élection...", segPos.x, segPos.y + 10);
     ctx.restore();
   });
@@ -565,7 +572,7 @@ function drawTopology(state) {
         if (!peerId || !positions[peerId]) return;
         const key = id < peerId ? `${id}-${peerId}` : `${peerId}-${id}`;
         if (!drawnDashed.has(key)) {
-          drawEdge(positions[id], positions[peerId], "#3a4552", true, null);
+          drawEdge(positions[id], positions[peerId], colors.dashedLink, true, null, colors.labelColor);
           drawnDashed.add(key);
         }
       });
@@ -585,12 +592,12 @@ function drawTopology(state) {
           const isShortestPathLink = (indexA !== -1 && indexB !== -1 && Math.abs(indexA - indexB) === 1);
 
           if (isShortestPathLink) {
-            ctx.shadowColor = "#ffd700";
+            ctx.shadowColor = colors.pathLink;
             ctx.shadowBlur = 12;
-            drawEdge(positions[id], positions[n.peer_id], "#ffd700", false, n.cost);
+            drawEdge(positions[id], positions[n.peer_id], colors.pathLink, false, n.cost, colors.labelColor);
             ctx.shadowBlur = 0;
           } else {
-            drawEdge(positions[id], positions[n.peer_id], "#33e6a8", false, n.cost);
+            drawEdge(positions[id], positions[n.peer_id], colors.fullLink, false, n.cost, colors.labelColor);
           }
           drawnFull.add(key);
         }
@@ -601,28 +608,30 @@ function drawTopology(state) {
   routerIds.forEach((id) => {
     const pos = positions[id];
     const running = state[id] && state[id].running;
-    
+
     ctx.beginPath();
     ctx.arc(pos.x, pos.y, 26, 0, 2 * Math.PI);
 
     if (id === selectedSourceId) {
       ctx.fillStyle = "#3498db";
-      ctx.strokeStyle = "#ffffff";
+      ctx.strokeStyle = colors.selectedStroke;
       ctx.lineWidth = 4;
     } else if (id === selectedDestId) {
       ctx.fillStyle = "#e74c3c";
-      ctx.strokeStyle = "#ffffff";
+      ctx.strokeStyle = colors.selectedStroke;
       ctx.lineWidth = 4;
     } else {
-      ctx.fillStyle = running ? "#121821" : "#0b0f14";
-      ctx.strokeStyle = running ? "#33e6a8" : "#3a4552";
+      ctx.fillStyle = running ? colors.nodeFillActive : colors.nodeFillInactive;
+      ctx.strokeStyle = running ? colors.nodeStrokeActive : colors.nodeStrokeInactive;
       ctx.lineWidth = 2;
     }
-    
+
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = (id === selectedSourceId || id === selectedDestId) ? "#ffffff" : (running ? "#d6e2ef" : "#6b7d8f");
+    ctx.fillStyle = (id === selectedSourceId || id === selectedDestId)
+      ? "#ffffff"
+      : (running ? colors.textActive : colors.textInactive);
     ctx.font = "13px Consolas";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -630,7 +639,7 @@ function drawTopology(state) {
   });
 }
 
-function drawEdge(a, b, color, dashed, label) {
+function drawEdge(a, b, color, dashed, label, labelColor) {
   ctx.save();
   ctx.beginPath();
   ctx.strokeStyle = color;
@@ -644,7 +653,7 @@ function drawEdge(a, b, color, dashed, label) {
   if (label !== null && label !== undefined) {
     const mx = (a.x + b.x) / 2;
     const my = (a.y + b.y) / 2;
-    ctx.fillStyle = "#33e6a8";
+    ctx.fillStyle = labelColor || "#33e6a8";
     ctx.font = "11px Consolas";
     ctx.textAlign = "center";
     ctx.fillText(String(label), mx, my - 6);
@@ -1318,6 +1327,53 @@ function openRenameSegmentModal(segmentId) {
   renameSegModalOverlay.addEventListener("click", onOverlayClick);
 }
 
+let isLightMode = localStorage.getItem("ospf-theme") === "light";
+
+function getThemeColors() {
+  return isLightMode
+    ? {
+        nodeFillActive: "#ffffff",
+        nodeFillInactive: "#eef1f3",
+        nodeStrokeActive: "#0f9d68",
+        nodeStrokeInactive: "#b0b8c1",
+        textActive: "#1f2b38",
+        textInactive: "#8a95a1",
+        selectedStroke: "#1f2b38",
+        dashedLink: "#c3ccd4",
+        fullLink: "#0f9d68",
+        pathLink: "#b8860b",
+        drLink: "#b8860b",
+        bdrLink: "#7a828a",
+        segmentBg: "#ffffff",
+        segmentBorder: "#2e78c7",
+        segmentText: "#2e78c7",
+        labelColor: "#0f9d68",
+      }
+    : {
+        nodeFillActive: "#121821",
+        nodeFillInactive: "#0b0f14",
+        nodeStrokeActive: "#33e6a8",
+        nodeStrokeInactive: "#3a4552",
+        textActive: "#d6e2ef",
+        textInactive: "#6b7d8f",
+        selectedStroke: "#ffffff",
+        dashedLink: "#3a4552",
+        fullLink: "#33e6a8",
+        pathLink: "#ffd700",
+        drLink: "#ffd700",
+        bdrLink: "#c0c0c0",
+        segmentBg: "#121821",
+        segmentBorder: "#3498db",
+        segmentText: "#3498db",
+        labelColor: "#33e6a8",
+      };
+}
+
+function applyTheme() {
+  document.body.classList.toggle("light-mode", isLightMode);
+  document.getElementById("btn-theme-toggle").textContent = isLightMode ? "☀️" : "🌙";
+}
+
 function logToConsole(text, type = "info") {
   const consoleBody = document.getElementById("console-output");
   if (!consoleBody) return;
@@ -1484,6 +1540,7 @@ function renderSegmentsList() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
+  applyTheme();
   refresh();
   setInterval(refresh, POLL_INTERVAL_MS);
   

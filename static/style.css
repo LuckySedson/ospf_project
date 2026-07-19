@@ -482,10 +482,32 @@ link-row select {
   border-radius: 4px;
 }
 
-.router-card-highlight {
-  border-color: var(--accent) !important;
-  box-shadow: 0 0 14px rgba(51, 230, 168, 0.5);
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+body.light-mode {
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --border: #d7dee5;
+  --text: #1f2b38;
+  --muted: #5a6b7a;
+  --accent: #0f9d68;
+  --danger: #d9363e;
+  --warn: #b8720a;
+  --down: #c3ccd4;
+  --highlight: #2e78c7;
+  --target: #c0392b;
+  --path: #b8860b;
+}
+
+body.light-mode .modal-overlay {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+body.light-mode .terminal-console {
+  background-color: #1a1a1a; /* le terminal reste sombre volontairement, style "vrai terminal" */
+}
+
+.btn-theme-toggle {
+  font-size: 15px;
+  padding: 8px 12px;
 }
 
 .modal-input.hidden { display: none; }
