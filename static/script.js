@@ -772,55 +772,72 @@ function getDistanceToSegment(x, y, x1, y1, x2, y2) {
     return Math.sqrt(dx * dx + dy * dy);
 }
 
+function buildGraphFromLsdb(lsdb) {
+  const graph = {};
+  const addEdge = (a, b, cost) => {
+    if (!graph[a]) graph[a] = {};
+    if (!graph[b]) graph[b] = {};
+    if (graph[a][b] === undefined || cost < graph[a][b]) graph[a][b] = cost;
+    if (graph[b][a] === undefined || cost < graph[b][a]) graph[b][a] = cost;
+  };
+  Object.entries(lsdb).forEach(([origin, entry]) => {
+    Object.entries(entry.links).forEach(([neighbor, cost]) => addEdge(origin, neighbor, cost));
+  });
+  return graph;
+}
+
+function dijkstraPath(graph, source, target) {
+  if (!(source in graph)) return null;
+  const dist = {}, prev = {};
+  Object.keys(graph).forEach((n) => { dist[n] = Infinity; });
+  dist[source] = 0;
+  const queue = new Set(Object.keys(graph));
+
+  while (queue.size > 0) {
+    let u = null, best = Infinity;
+    queue.forEach((n) => { if (dist[n] < best) { best = dist[n]; u = n; } });
+    if (u === null) break;
+    queue.delete(u);
+    if (u === target) break;
+
+    Object.entries(graph[u] || {}).forEach(([v, w]) => {
+      const alt = dist[u] + w;
+      if (alt < dist[v]) { dist[v] = alt; prev[v] = u; }
+    });
+  }
+
+  if (dist[target] === undefined || dist[target] === Infinity) return null;
+
+  const path = [];
+  let cur = target;
+  while (cur !== undefined) {
+    path.unshift(cur);
+    if (cur === source) break;
+    cur = prev[cur];
+  }
+  return path[0] === source ? path : null;
+}
+
 function computeActiveShortestPath() {
-  if (!selectedSourceId || !selectedDestId) {
-    activeShortestPath = [];
+  activeShortestPath = [];
+  if (!selectedSourceId || !selectedDestId) return;
+
+  const rState = latestState[selectedSourceId];
+  if (!rState || !rState.lsdb) {
+    console.warn("[chemin] pas de LSDB disponible pour", selectedSourceId);
     return;
   }
 
-  const path = [];
-  let current = selectedSourceId;
-  const visited = new Set();
-  const maxHops = 10;
+  const graph = buildGraphFromLsdb(rState.lsdb);
+  const path = dijkstraPath(graph, selectedSourceId, selectedDestId);
 
-  while (current && current !== selectedDestId && path.length < maxHops) {
-    if (visited.has(current)) {
-      console.warn("[chemin] boucle detectee, deja visite:", current);
-      break;
-    }
-    visited.add(current);
-    path.push(current);
-
-    const rState = latestState[current];
-    if (!rState) {
-      console.warn(`[chemin] aucun etat pour ${current} (routeur arrete ou pas dans latestState)`);
-      activeShortestPath = [];
-      return;
-    }
-    if (!rState.routing_table) {
-      console.warn(`[chemin] ${current} n'a pas de routing_table dans son etat`, rState);
-      activeShortestPath = [];
-      return;
-    }
-    if (!rState.routing_table[selectedDestId]) {
-      console.warn(`[chemin] ${current} n'a pas de route vers ${selectedDestId}. Routes connues:`, Object.keys(rState.routing_table));
-      activeShortestPath = [];
-      return;
-    }
-
-    const nextHop = rState.routing_table[selectedDestId].next_hop;
-    console.log(`[chemin] ${current} -> ${nextHop} (vers ${selectedDestId})`);
-    current = nextHop;
+  if (!path) {
+    console.warn(`[chemin] aucun chemin trouve entre ${selectedSourceId} et ${selectedDestId}`);
+    return;
   }
 
-  if (current === selectedDestId) {
-    path.push(selectedDestId);
-    activeShortestPath = path;
-    console.log("[chemin] chemin final:", path);
-  } else {
-    console.warn("[chemin] echec, current final =", current);
-    activeShortestPath = [];
-  }
+  console.log("[chemin] chemin trouve:", path);
+  activeShortestPath = path;
 }
 
 function findNodeAt(x, y) {

@@ -20,6 +20,7 @@ class Segment:
         }
         self.dr = None
         self.bdr = None
+        self._locked = False
 
     def _eligible(self):
         eligible = {}
@@ -38,13 +39,14 @@ class Segment:
     def _elect(self):
         eligible = self._eligible()
         old = (self.dr, self.bdr)
-
         all_heard = all(e["state"] != DOWN for e in self.peers.values())
 
-        if not all_heard:
+        if not self._locked:
             self.dr = self._pick_best(eligible)
             remaining = {k: v for k, v in eligible.items() if k != self.dr}
             self.bdr = self._pick_best(remaining)
+            if all_heard:
+                self._locked = True
         else:
             if self.dr not in eligible:
                 self.dr = self._pick_best(eligible)
