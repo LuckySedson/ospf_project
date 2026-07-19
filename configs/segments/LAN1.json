@@ -3,7 +3,7 @@
   "members": [
     {
       "router_id": "R1",
-      "priority": 10,
+      "priority": 5,
       "cost": 1
     },
     {

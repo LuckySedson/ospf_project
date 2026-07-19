@@ -39,6 +39,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         if self.path == "/state":
             payload = {
                 "router_id": self.router_ref.router_id,
+                "ip": self.router_ref.ip,
                 "neighbors": self.router_ref.neighbor_manager.snapshot(),
                 "segments": {sid: seg.snapshot() for sid, seg in self.router_ref.segments.items()},
                 "lsdb": self.router_ref.lsdb.snapshot(),
@@ -86,6 +87,7 @@ class StatusHandler(BaseHTTPRequestHandler):
 class Router:
     def __init__(self, config):
         self.router_id = config["router_id"]
+        self.ip = config.get("ip", "0.0.0.0")
         self.port = config["port"]
         self.status_port = config["status_port"]
         self.links_config = config["links"]
@@ -103,7 +105,7 @@ class Router:
         self.segments = {}
         for seg_cfg in config.get("segments", []):
             self.segments[seg_cfg["segment_id"]] = Segment(
-                seg_cfg["segment_id"], self.router_id, seg_cfg["priority"],
+                seg_cfg["segment_id"], self.router_id, self.ip, seg_cfg["priority"],
                 seg_cfg["cost"], seg_cfg["peer_ports"], NEIGHBOR_TIMEOUT,
             )
         self.lsdb = LSDB(LSA_MAX_AGE)
@@ -166,7 +168,7 @@ class Router:
         segment = self.segments.get(msg["segment_id"])
         if segment is None:
             return
-        changed = segment.process_hello(peer_port, msg["origin"], msg["priority"])
+        changed = segment.process_hello(peer_port, msg["origin"], msg["priority"], msg["ip"])
         if changed:
             self.log.info(f"Segment {segment.segment_id}: DR={segment.dr} BDR={segment.bdr}")
             self.emit_lsa()
@@ -174,15 +176,15 @@ class Router:
     def segment_hello_loop(self):
         while self.running:
             for segment in list(self.segments.values()):
-                payload = build_segment_hello(self.router_id, segment.segment_id, segment.priority, segment.dr, segment.bdr)
+                payload = build_segment_hello(self.router_id, segment.segment_id, segment.priority, segment.dr, segment.bdr, self.ip)
                 for port in list(segment.peers.keys()):
                     self.sock.sendto(payload, (HOST, port))
             time.sleep(HELLO_INTERVAL)
 
     def admin_add_segment(self, segment_id, priority, cost, peer_ports):
-        self.segments[segment_id] = Segment(segment_id, self.router_id, priority, cost, peer_ports, NEIGHBOR_TIMEOUT)
+        self.segments[segment_id] = Segment(segment_id, self.router_id, self.ip, priority, cost, peer_ports, NEIGHBOR_TIMEOUT)
         self.log.info(f"Segment {segment_id} ajoute dynamiquement (priorite {priority}, cout {cost})")
-
+    
     def admin_remove_segment(self, segment_id):
         if segment_id in self.segments:
             del self.segments[segment_id]

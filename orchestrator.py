@@ -3,6 +3,7 @@ import subprocess
 import sys
 import urllib.request
 import urllib.error
+import re
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -15,6 +16,14 @@ HOST = "127.0.0.1"
 
 REFERENCE_BANDWIDTH_MBPS = 100000  # 100 Gbps : cout OSPF = reference / bande_passante_du_lien
 
+IP_REGEX = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
+
+
+def is_valid_ip(ip):
+    m = IP_REGEX.match(ip or "")
+    if not m:
+        return False
+    return all(0 <= int(g) <= 255 for g in m.groups())
 
 def compute_cost(bandwidth_mbps):
     return max(1, REFERENCE_BANDWIDTH_MBPS // bandwidth_mbps)
@@ -36,6 +45,19 @@ def load_router_configs():
             config = json.load(f)
         new_configs[config["router_id"]] = config
     router_configs = new_configs
+    _ensure_all_ips()
+
+
+def _ensure_all_ips():
+    used = {c["ip"] for c in router_configs.values() if c.get("ip")}
+    for config in router_configs.values():
+        if not config.get("ip") or not is_valid_ip(config["ip"]):
+            candidate = 1
+            while f"10.0.0.{candidate}" in used:
+                candidate += 1
+            config["ip"] = f"10.0.0.{candidate}"
+            used.add(config["ip"])
+            save_config(config)
 
 def load_segment_configs():
     global segment_configs
@@ -202,6 +224,7 @@ def list_routers():
             "router_id": router_id,
             "port": config["port"],
             "status_port": config["status_port"],
+            "ip": config.get("ip", "0.0.0.0"),
             "links": config["links"],
             "running": is_running(router_id),
         })
@@ -305,10 +328,18 @@ def add_router():
             "peer_id": peer_id,
         })
 
+    ip = (data.get("ip") or "").strip()
+    if ip:
+        if not is_valid_ip(ip):
+            return jsonify({"ok": False, "error": "adresse ip invalide"}), 400
+        if any(c.get("ip") == ip for c in router_configs.values()):
+            return jsonify({"ok": False, "error": "adresse ip deja utilisee"}), 400
+    
     new_config = {
         "router_id": router_id,
         "port": port,
         "status_port": status_port,
+        "ip": ip,
         "links": [{"peer_port": l["peer_port"], "cost": l["cost"], "bandwidth": l["bandwidth"]} for l in resolved_links],
     }
     save_config(new_config)
@@ -477,8 +508,20 @@ def edit_router(old_id):
         "router_id": new_id,
         "port": new_port,
         "status_port": new_status_port,
+        "ip": new_ip,
         "links": old_config["links"],
     }
+    
+    new_ip = (data.get("ip") or "").strip()
+    if new_ip:
+        if not is_valid_ip(new_ip):
+            return jsonify({"ok": False, "error": "adresse ip invalide"}), 400
+        for rid, cfg in router_configs.items():
+            if rid != old_id and cfg.get("ip") == new_ip:
+                return jsonify({"ok": False, "error": "adresse ip deja utilisee"}), 400
+    else:
+        new_ip = old_config.get("ip", "")
+    
     save_config(new_config)
 
     processes.pop(old_id, None)

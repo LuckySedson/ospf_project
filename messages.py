@@ -30,7 +30,7 @@ def parse_message(data):
         return None
     
 
-def build_segment_hello(origin, segment_id, priority, dr, bdr):
+def build_segment_hello(origin, segment_id, priority, dr, bdr, ip):
     payload = {
         "type": SEGMENT_HELLO,
         "origin": origin,
@@ -38,5 +38,6 @@ def build_segment_hello(origin, segment_id, priority, dr, bdr):
         "priority": priority,
         "dr": dr,
         "bdr": bdr,
+        "ip": ip,
     }
     return json.dumps(payload).encode()

@@ -193,6 +193,8 @@ function friendlyError(rawError) {
     "champs manquants": "Merci de remplir tous les champs obligatoires.",
     "router_id deja utilise": "Ce nom de routeur (ID) est déjà utilisé par un autre routeur.",
     "port deja utilise": "Le port UDP ou le port de statut choisi est déjà utilisé par un autre routeur.",
+    "adresse ip invalide": "L'adresse IP saisie n'est pas valide (format attendu : X.X.X.X).",
+    "adresse ip deja utilisee": "Cette adresse IP est déjà utilisée par un autre routeur.",
   };
   return map[rawError] || rawError;
 }
@@ -255,11 +257,13 @@ const editModalCancel = document.getElementById("edit-modal-cancel");
 
 function openEditRouterModal(id) {
   const meta = routersMeta[id];
+  const editRouterIpInput = document.getElementById("edit-router-ip");
   if (!meta) return;
 
   editRouterIdInput.value = id;
   editRouterPortInput.value = meta.port;
   editRouterStatusPortInput.value = meta.status_port;
+  editRouterIpInput.value = meta.ip || "";
   editModalOverlay.classList.remove("hidden");
 
   const cleanup = () => {
@@ -273,6 +277,7 @@ function openEditRouterModal(id) {
     const newId = editRouterIdInput.value.trim();
     const newPort = parseInt(editRouterPortInput.value, 10);
     const newStatusPort = parseInt(editRouterStatusPortInput.value, 10);
+    const newIp = editRouterIpInput.value.trim();
 
     if (!newId || !newPort || !newStatusPort) {
       await showAlert("Champs manquants", "Merci de remplir l'ID, le port UDP et le port de statut.", "error");
@@ -284,7 +289,7 @@ function openEditRouterModal(id) {
     const res = await fetch(`/api/routers/edit/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ router_id: newId, port: newPort, status_port: newStatusPort }),
+      body: JSON.stringify({ router_id: newId, port: newPort, status_port: newStatusPort, ip: newIp }),
     });
     const data = await res.json();
 
@@ -324,6 +329,7 @@ document.getElementById("btn-add-router").addEventListener("click", async () => 
   const router_id = document.getElementById("new-router-id").value.trim();
   const port = parseInt(document.getElementById("new-router-port").value, 10);
   const status_port = parseInt(document.getElementById("new-router-status-port").value, 10);
+  const ip = document.getElementById("new-router-ip").value.trim();
 
   if (!router_id || !port || !status_port) {
     await showAlert("Champs manquants", "Merci de remplir l'ID, le port UDP et le port de statut.", "error");
@@ -342,7 +348,7 @@ document.getElementById("btn-add-router").addEventListener("click", async () => 
   const res = await fetch("/api/routers/add", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ router_id, port, status_port, links }),
+    body: JSON.stringify({ router_id, port, status_port, ip, links }),
   });
   const data = await res.json();
 
@@ -358,6 +364,7 @@ document.getElementById("btn-add-router").addEventListener("click", async () => 
   await refresh();
 
   await showAlert("Routeur ajouté", `Le routeur ${router_id} a été créé avec succès.`, "success");
+  document.getElementById("new-router-ip").value = "";
 });
 
 function getPhysicalLinks() {
@@ -669,18 +676,20 @@ function renderRouterCard(id, s) {
   : "";
 
   const segmentRows = s && s.segments
-  ? Object.entries(s.segments)
-      .map(([sid, seg]) => {
-        const role = seg.dr === id ? "DR" : seg.bdr === id ? "BDR" : "Membre (2-WAY)";
-        return `<tr>
-          <td>${sid}</td>
-          <td>${role}</td>
-          <td>DR: ${seg.dr ?? "—"} / BDR: ${seg.bdr ?? "—"}</td>
-          <td>${seg.cost}</td>
-        </tr>`;
-      })
-      .join("")
-  : "";
+    ? Object.entries(s.segments)
+        .map(([sid, seg]) => {
+          const role = seg.dr === id ? "DR" : seg.bdr === id ? "BDR" : "Membre (2-WAY)";
+          const drIp = routersMeta[seg.dr] ? ` (${routersMeta[seg.dr].ip})` : "";
+          const bdrIp = routersMeta[seg.bdr] ? ` (${routersMeta[seg.bdr].ip})` : "";
+          return `<tr>
+            <td>${sid}</td>
+            <td>${role}</td>
+            <td>DR: ${seg.dr ?? "—"}${drIp} / BDR: ${seg.bdr ?? "—"}${bdrIp}</td>
+            <td>${seg.cost}</td>
+          </tr>`;
+        })
+        .join("")
+    : "";
 
   const lsdbRows = s && s.lsdb
     ? Object.entries(s.lsdb)
@@ -696,19 +705,20 @@ function renderRouterCard(id, s) {
 
   const routingRows = s && s.routing_table
     ? Object.entries(s.routing_table)
-        .map(
-          ([dest, r]) => `<tr>
-            <td>${dest}</td>
+        .map(([dest, r]) => {
+          const destIp = routersMeta[dest] ? ` (${routersMeta[dest].ip})` : "";
+          return `<tr>
+            <td>${dest}${destIp}</td>
             <td>${r.next_hop}</td>
             <td>${r.cost}</td>
-          </tr>`
-        )
+          </tr>`;
+        })
         .join("")
     : "";
 
   card.innerHTML = `
     <div class="router-card-header">
-      <h2>${id}</h2>
+      <h2>${id} <span style="font-size:11px;color:var(--muted);font-weight:normal;">${routersMeta[id] ? routersMeta[id].ip : ""}</span></h2>
       <div>
         <span class="badge ${running ? "running" : "stopped"}">${running ? "ACTIF" : "ARRETE"}</span>
         <span class="router-actions">

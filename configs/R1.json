@@ -20,12 +20,13 @@
   "segments": [
     {
       "segment_id": "LAN1",
-      "priority": 10,
+      "priority": 5,
       "cost": 1,
       "peer_ports": [
         9003,
         9004
       ]
     }
-  ]
+  ],
+  "ip": "10.0.0.1"
 }
