@@ -497,8 +497,8 @@ function drawTopology(state) {
     if (!segPos) return;
 
     let dr = null, bdr = null;
-    for (const rid of routerIds) {
-      const segState = state[rid] && state[rid].segments && state[rid].segments[sid];
+    for (const rid of segmentsMeta[sid].members.map((m) => m.router_id)) {
+      const segState = state[rid] && state[rid].running && state[rid].segments && state[rid].segments[sid];
       if (segState && segState.dr) { dr = segState.dr; bdr = segState.bdr; break; }
     }
 
@@ -666,6 +666,20 @@ function renderRouterCard(id, s) {
       .join("")
   : "";
 
+  const segmentRows = s && s.segments
+  ? Object.entries(s.segments)
+      .map(([sid, seg]) => {
+        const role = seg.dr === id ? "DR" : seg.bdr === id ? "BDR" : "Membre (2-WAY)";
+        return `<tr>
+          <td>${sid}</td>
+          <td>${role}</td>
+          <td>DR: ${seg.dr ?? "—"} / BDR: ${seg.bdr ?? "—"}</td>
+          <td>${seg.cost}</td>
+        </tr>`;
+      })
+      .join("")
+  : "";
+
   const lsdbRows = s && s.lsdb
     ? Object.entries(s.lsdb)
         .map(
@@ -708,6 +722,12 @@ function renderRouterCard(id, s) {
     <table>
       <thead><tr><th>Peer</th><th>Etat</th><th>Bande passante</th><th>Cout</th></tr></thead>
       <tbody>${neighborsRows}</tbody>
+    </table>
+
+    <div class="section-label">Segments</div>
+    <table>
+      <thead><tr><th>Segment</th><th>Mon rôle</th><th>DR / BDR</th><th>Cout</th></tr></thead>
+      <tbody>${segmentRows}</tbody>
     </table>
 
     <div class="section-label">LSDB</div>

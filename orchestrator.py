@@ -29,18 +29,22 @@ SEGMENTS_DIR.mkdir(parents=True, exist_ok=True)
 segment_configs = {}
 
 def load_router_configs():
-    router_configs.clear()
+    global router_configs
+    new_configs = {}
     for path in sorted(CONFIGS_DIR.glob("*.json")):
         with open(path) as f:
             config = json.load(f)
-        router_configs[config["router_id"]] = config
+        new_configs[config["router_id"]] = config
+    router_configs = new_configs
 
 def load_segment_configs():
-    segment_configs.clear()
+    global segment_configs
+    new_configs = {}
     for path in sorted(SEGMENTS_DIR.glob("*.json")):
         with open(path) as f:
             config = json.load(f)
-        segment_configs[config["segment_id"]] = config
+        new_configs[config["segment_id"]] = config
+    segment_configs = new_configs
 
 
 def save_segment_config(config):
