@@ -30,6 +30,8 @@ let dragMoved = false;
 let activePackets = [];
 let segmentsMeta = {};
 
+let activePathGraph = {};
+
 const modalIcon = document.getElementById("modal-icon");
 const modalInput = document.getElementById("modal-input");
 
@@ -658,6 +660,7 @@ function stateClass(state) {
 function renderRouterCard(id, s) {
   const running = s && s.running;
   const card = document.createElement("div");
+  card.id = `router-card-${id}`;
   card.className = "router-card";
 
   const neighborsRows = s && s.neighbors
@@ -850,6 +853,13 @@ function dijkstraPath(graph, source, target) {
   return path[0] === source ? path : null;
 }
 
+function costToSpeed(cost) {
+  const MIN_SPEED = 0.006;
+  const MAX_SPEED = 0.05;
+  const speed = 0.06 / Math.sqrt(Math.max(cost, 1));
+  return Math.min(MAX_SPEED, Math.max(MIN_SPEED, speed));
+}
+
 function computeActiveShortestPath() {
   activeShortestPath = [];
   if (!selectedSourceId || !selectedDestId) return;
@@ -861,6 +871,7 @@ function computeActiveShortestPath() {
   }
 
   const graph = buildGraphFromLsdb(rState.lsdb);
+  activePathGraph = graph;
   const path = dijkstraPath(graph, selectedSourceId, selectedDestId);
 
   if (!path) {
@@ -925,6 +936,15 @@ function findSegmentEdgeAt(x, y) {
   return null;
 }
 
+function scrollToRouterCard(id) {
+  const card = document.getElementById(`router-card-${id}`);
+  if (!card) return;
+
+  card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  card.classList.add("router-card-highlight");
+  setTimeout(() => card.classList.remove("router-card-highlight"), 1200);
+}
+
 function handleNodeClick(clickedId, shiftKey) {
   if (shiftKey) {
     if (selectedSourceId === clickedId) {
@@ -944,6 +964,7 @@ function handleNodeClick(clickedId, shiftKey) {
     }
   }
   computeActiveShortestPath();
+  scrollToRouterCard(clickedId);
 }
 
 async function handleEdgeClick(link) {
@@ -1327,6 +1348,9 @@ function spawnPathPacket(path, index, isReply) {
   const endPos = latestPositions[toId];
   if (!startPos || !endPos) return;
 
+  const cost = (activePathGraph[fromId] && activePathGraph[fromId][toId]) || 1;
+  const speed = costToSpeed(cost);
+
   activePackets.push({
     fromId,
     toId,
@@ -1335,7 +1359,7 @@ function spawnPathPacket(path, index, isReply) {
     endX: endPos.x,
     endY: endPos.y,
     progress: 0,
-    speed: 0.025,
+    speed,
     color: isReply ? "#33e6a8" : "#3498db",
     size: 7,
     onArrive: () => {
