@@ -20,6 +20,8 @@ let activeShortestPath = [];
 let latestState = {};
 let latestPositions = {};
 
+let justDragged = false;
+
 let nodePositions = {};
 let draggingId = null;
 let dragStart = null;
@@ -1007,12 +1009,20 @@ window.addEventListener("mouseup", (event) => {
   dragMoved = false;
   canvas.style.cursor = "default";
 
-  if (!wasDrag && routersMeta[releasedId]) {
+  if (wasDrag) {
+    justDragged = true;
+  } else if (routersMeta[releasedId]) {
     handleNodeClick(releasedId, event.shiftKey);
   }
 });
 
 canvas.addEventListener("click", (event) => {
+
+  if (justDragged) {
+    justDragged = false;
+    return;
+  }
+
   const rect = canvas.getBoundingClientRect();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
