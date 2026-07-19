@@ -46,6 +46,103 @@ def load_segment_configs():
         new_configs[config["segment_id"]] = config
     segment_configs = new_configs
 
+@app.route("/api/segments/update_member", methods=["POST"])
+def update_segment_member():
+    load_router_configs()
+    load_segment_configs()
+    data = request.get_json(force=True)
+
+    segment_id = data.get("segment_id")
+    router_id = data.get("router_id")
+    priority = data.get("priority")
+    cost = data.get("cost")
+
+    if segment_id not in segment_configs:
+        return jsonify({"ok": False, "error": "segment introuvable"}), 404
+    if router_id not in router_configs:
+        return jsonify({"ok": False, "error": "routeur introuvable"}), 404
+    if not isinstance(priority, int) or priority < 0:
+        return jsonify({"ok": False, "error": "priorite invalide"}), 400
+    if not isinstance(cost, int) or cost <= 0:
+        return jsonify({"ok": False, "error": "cout invalide"}), 400
+
+    seg_cfg = segment_configs[segment_id]
+    updated = False
+    for m in seg_cfg["members"]:
+        if m["router_id"] == router_id:
+            m["priority"] = priority
+            m["cost"] = cost
+            updated = True
+    if not updated:
+        return jsonify({"ok": False, "error": "ce routeur n'est pas membre du segment"}), 400
+    save_segment_config(seg_cfg)
+
+    router_cfg = router_configs[router_id]
+    for s in router_cfg.get("segments", []):
+        if s["segment_id"] == segment_id:
+            s["priority"] = priority
+            s["cost"] = cost
+    save_config(router_cfg)
+
+    if is_running(router_id):
+        post_admin(router_cfg["status_port"], "/admin/update_segment_member", {
+            "segment_id": segment_id, "priority": priority, "cost": cost,
+        })
+
+    load_router_configs()
+    load_segment_configs()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/segments/edit/<old_id>", methods=["POST"])
+def edit_segment(old_id):
+    load_router_configs()
+    load_segment_configs()
+
+    if old_id not in segment_configs:
+        return jsonify({"ok": False, "error": "segment introuvable"}), 404
+
+    data = request.get_json(force=True)
+    new_id = (data.get("segment_id") or "").strip()
+    if not new_id:
+        return jsonify({"ok": False, "error": "champs manquants"}), 400
+    if new_id != old_id and new_id in segment_configs:
+        return jsonify({"ok": False, "error": "segment_id deja utilise"}), 400
+
+    seg_cfg = segment_configs[old_id]
+    members = seg_cfg["members"]
+
+    old_path = SEGMENTS_DIR / f"{old_id}.json"
+    if old_path.exists():
+        old_path.unlink()
+    save_segment_config({"segment_id": new_id, "members": members})
+
+    for m in members:
+        rid = m["router_id"]
+        if rid not in router_configs:
+            continue
+        cfg = router_configs[rid]
+        peer_ports = [router_configs[o["router_id"]]["port"] for o in members if o["router_id"] != rid]
+
+        was_running = is_running(rid)
+        if was_running:
+            post_admin(cfg["status_port"], "/admin/remove_segment", {"segment_id": old_id})
+
+        cfg["segments"] = [s for s in cfg.get("segments", []) if s["segment_id"] != old_id]
+        cfg["segments"].append({
+            "segment_id": new_id, "priority": m["priority"], "cost": m["cost"], "peer_ports": peer_ports,
+        })
+        save_config(cfg)
+
+        if was_running:
+            post_admin(cfg["status_port"], "/admin/add_segment", {
+                "segment_id": new_id, "priority": m["priority"], "cost": m["cost"], "peer_ports": peer_ports,
+            })
+
+    load_router_configs()
+    load_segment_configs()
+    return jsonify({"ok": True})
+
 
 def save_segment_config(config):
     path = SEGMENTS_DIR / f"{config['segment_id']}.json"

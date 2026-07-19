@@ -78,6 +78,14 @@ class NeighborManager:
     def remove_neighbor(self, peer_port):
         with self.lock:
             self.neighbors.pop(peer_port, None)
+    
+    def update_self(self, priority, cost):
+        with self.lock:
+            self.priority = priority
+            self.cost = cost
+            changed = self._elect()
+            self._refresh_adjacency_states()
+            return changed
 
     def snapshot(self):
         with self.lock:

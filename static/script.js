@@ -862,6 +862,14 @@ function computeActiveShortestPath() {
 
 function findNodeAt(x, y) {
   for (const [id, pos] of Object.entries(nodePositions)) {
+    if (!routersMeta[id]) continue;
+    if (Math.hypot(x - pos.x, y - pos.y) < 26) return id;
+  }
+  return null;
+}
+
+function findDraggableAt(x, y) {
+  for (const [id, pos] of Object.entries(nodePositions)) {
     if (Math.hypot(x - pos.x, y - pos.y) < 26) return id;
   }
   return null;
@@ -886,6 +894,21 @@ function findEdgeAt(x, y) {
     const n2 = nodePositions[link.to];
     if (!n1 || !n2) continue;
     if (getDistanceToSegment(x, y, n1.x, n1.y, n2.x, n2.y) < 8) return link;
+  }
+  return null;
+}
+
+function findSegmentEdgeAt(x, y) {
+  for (const sid of Object.keys(segmentsMeta)) {
+    const segPos = nodePositions[sid];
+    if (!segPos) continue;
+    for (const m of segmentsMeta[sid].members) {
+      const memberPos = nodePositions[m.router_id];
+      if (!memberPos) continue;
+      if (getDistanceToSegment(x, y, segPos.x, segPos.y, memberPos.x, memberPos.y) < 8) {
+        return { segment_id: sid, router_id: m.router_id, priority: m.priority, cost: m.cost };
+      }
+    }
   }
   return null;
 }
@@ -950,7 +973,7 @@ canvas.addEventListener("mousedown", (event) => {
   const rect = canvas.getBoundingClientRect();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
-  const hitId = findNodeAt(x, y);
+  const hitId = findDraggableAt(x, y);
   if (hitId) {
     draggingId = hitId;
     dragMoved = false;
@@ -984,7 +1007,7 @@ window.addEventListener("mouseup", (event) => {
   dragMoved = false;
   canvas.style.cursor = "default";
 
-  if (!wasDrag) {
+  if (!wasDrag && routersMeta[releasedId]) {
     handleNodeClick(releasedId, event.shiftKey);
   }
 });
@@ -995,6 +1018,12 @@ canvas.addEventListener("click", (event) => {
   const y = event.clientY - rect.top;
 
   if (findNodeAt(x, y)) return;
+
+  const segEdge = findSegmentEdgeAt(x, y);
+  if (segEdge) {
+    openEditSegmentMemberModal(segEdge.segment_id, segEdge.router_id, segEdge.priority, segEdge.cost);
+    return;
+  }
 
   const edge = findEdgeAt(x, y);
   if (edge) {
@@ -1040,6 +1069,40 @@ if (canvas) {
         }
       }
     }
+
+    if (!isHovered) {
+      const links = getPhysicalLinks();
+
+      for (const link of links) {
+        const n1 = latestPositions[link.from];
+        const n2 = latestPositions[link.to];
+        if (!n1 || !n2) continue;
+
+        const distToLink = getDistanceToSegment(mouseX, mouseY, n1.x, n1.y, n2.x, n2.y);
+        if (distToLink < 8) {
+          isHovered = true;
+          break;
+        }
+      }
+    }
+
+    if (!isHovered) {
+      for (const sid of Object.keys(segmentsMeta)) {
+        const segPos = latestPositions[sid];
+        if (!segPos) continue;
+        for (const m of segmentsMeta[sid].members) {
+          const memberPos = latestPositions[m.router_id];
+          if (!memberPos) continue;
+          if (getDistanceToSegment(mouseX, mouseY, segPos.x, segPos.y, memberPos.x, memberPos.y) < 8) {
+            isHovered = true;
+            break;
+          }
+        }
+        if (isHovered) break;
+      }
+    }
+
+    canvas.style.cursor = isHovered ? "pointer" : "default";
 
     canvas.style.cursor = isHovered ? "pointer" : "default";
   });
@@ -1113,6 +1176,105 @@ function updateAndDrawPackets() {
 
     return true;
   });
+}
+
+const editSegModalOverlay = document.getElementById("edit-segment-modal-overlay");
+const editSegPriorityInput = document.getElementById("edit-segment-priority");
+const editSegCostInput = document.getElementById("edit-segment-cost");
+const editSegConfirm = document.getElementById("edit-segment-confirm");
+const editSegCancel = document.getElementById("edit-segment-cancel");
+const editSegTitle = document.getElementById("edit-segment-title");
+
+function openEditSegmentMemberModal(segmentId, routerId, priority, cost) {
+  editSegTitle.textContent = `Modifier ${routerId} sur ${segmentId}`;
+  editSegPriorityInput.value = priority;
+  editSegCostInput.value = cost;
+  editSegModalOverlay.classList.remove("hidden");
+
+  const cleanup = () => {
+    editSegModalOverlay.classList.add("hidden");
+    editSegConfirm.removeEventListener("click", onConfirm);
+    editSegCancel.removeEventListener("click", onCancel);
+    editSegModalOverlay.removeEventListener("click", onOverlayClick);
+  };
+
+  const onConfirm = async () => {
+    const priority = parseInt(editSegPriorityInput.value, 10);
+    const cost = parseInt(editSegCostInput.value, 10);
+    if (!Number.isFinite(priority) || priority < 0 || !Number.isFinite(cost) || cost <= 0) {
+      await showAlert("Valeurs invalides", "Priorité ≥ 0 et coût > 0 requis.", "error");
+      return;
+    }
+    cleanup();
+
+    const res = await fetch("/api/segments/update_member", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ segment_id: segmentId, router_id: routerId, priority, cost }),
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      await showAlert("Erreur", friendlyError(data.error), "error");
+      return;
+    }
+    await refresh();
+    await showAlert("Membre mis à jour", `${routerId} sur ${segmentId} : priorité=${priority}, coût=${cost}.`, "success");
+  };
+  const onCancel = () => cleanup();
+  const onOverlayClick = (e) => { if (e.target === editSegModalOverlay) cleanup(); };
+
+  editSegConfirm.addEventListener("click", onConfirm);
+  editSegCancel.addEventListener("click", onCancel);
+  editSegModalOverlay.addEventListener("click", onOverlayClick);
+}
+
+const renameSegModalOverlay = document.getElementById("rename-segment-modal-overlay");
+const renameSegInput = document.getElementById("rename-segment-input");
+const renameSegConfirm = document.getElementById("rename-segment-confirm");
+const renameSegCancel = document.getElementById("rename-segment-cancel");
+
+function openRenameSegmentModal(segmentId) {
+  renameSegInput.value = segmentId;
+  renameSegModalOverlay.classList.remove("hidden");
+
+  const cleanup = () => {
+    renameSegModalOverlay.classList.add("hidden");
+    renameSegConfirm.removeEventListener("click", onConfirm);
+    renameSegCancel.removeEventListener("click", onCancel);
+    renameSegModalOverlay.removeEventListener("click", onOverlayClick);
+  };
+
+  const onConfirm = async () => {
+    const newId = renameSegInput.value.trim();
+    if (!newId) {
+      await showAlert("Champ manquant", "Merci de saisir un nom.", "error");
+      return;
+    }
+    cleanup();
+
+    const res = await fetch(`/api/segments/edit/${segmentId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ segment_id: newId }),
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      await showAlert("Erreur", friendlyError(data.error), "error");
+      return;
+    }
+    if (nodePositions[segmentId]) {
+      nodePositions[newId] = nodePositions[segmentId];
+      delete nodePositions[segmentId];
+    }
+    await refresh();
+    await showAlert("Segment renommé", `${segmentId} → ${newId}. L'élection DR/BDR redémarre sur ce segment.`, "success");
+  };
+  const onCancel = () => cleanup();
+  const onOverlayClick = (e) => { if (e.target === renameSegModalOverlay) cleanup(); };
+
+  renameSegConfirm.addEventListener("click", onConfirm);
+  renameSegCancel.addEventListener("click", onCancel);
+  renameSegModalOverlay.addEventListener("click", onOverlayClick);
 }
 
 function logToConsole(text, type = "info") {
@@ -1262,9 +1424,11 @@ function renderSegmentsList() {
     const members = segmentsMeta[sid].members.map((m) => m.router_id).join(", ");
     row.innerHTML = `
       <span>${sid} (${members})</span>
+      <button class="btn btn-edit" data-segment-edit="${sid}">Modifier</button>
       <button class="btn btn-remove" data-segment="${sid}">Suppr.</button>
     `;
-    row.querySelector("button").addEventListener("click", async () => {
+    row.querySelector("[data-segment-edit]").addEventListener("click", () => openRenameSegmentModal(sid));
+    row.querySelector("[data-segment]").addEventListener("click", async () => {
       const confirmed = await showConfirm("Supprimer le segment", `Supprimer définitivement ${sid} ?`);
       if (!confirmed) return;
       await fetch(`/api/segments/remove/${sid}`, { method: "POST" });

@@ -72,6 +72,9 @@ class StatusHandler(BaseHTTPRequestHandler):
         elif self.path == "/admin/remove_segment":
             self.router_ref.admin_remove_segment(payload["segment_id"])
             self._send_json({"ok": True})
+        elif self.path == "/admin/update_segment_member":
+            self.router_ref.admin_update_segment_member(payload["segment_id"], payload["priority"], payload["cost"])
+            self._send_json({"ok": True})
         else:
             self.send_response(404)
             self.end_headers()
@@ -185,6 +188,14 @@ class Router:
             del self.segments[segment_id]
             self.log.info(f"Segment {segment_id} retire dynamiquement")
             self.emit_lsa()
+    
+    def admin_update_segment_member(self, segment_id, priority, cost):
+        segment = self.segments.get(segment_id)
+        if segment is None:
+            return
+        segment.update_self(priority, cost)
+        self.log.info(f"Segment {segment_id}: priorite/cout mis a jour ({self.router_id} -> priorite={priority}, cout={cost})")
+        self.emit_lsa()
 
     def handle_lsa(self, msg):
         updated = self.lsdb.update(msg["origin"], msg["seq"], msg["links"])
