@@ -1191,21 +1191,25 @@ function spawnPacket(fromId, toId, type) {
   });
 }
 
+let previousNeighborHello = {};
+
 function triggerPacketsFromState(state) {
   Object.keys(state).forEach((routerId) => {
     const rState = state[routerId];
     if (!rState || !rState.neighbors || !rState.running) return;
 
-    Object.values(rState.neighbors).forEach((neighbor) => {
-      if (neighbor.state === "FULL" && neighbor.peer_id) {
-        const rand = Math.random();
-        
-        if (rand < 0.25) {
-          spawnPacket(routerId, neighbor.peer_id, "HELLO");
-        } 
-        else if (rand < 0.35) {
-          spawnPacket(routerId, neighbor.peer_id, "LSA");
-        }
+    Object.entries(rState.neighbors).forEach(([port, neighbor]) => {
+      if (!neighbor.peer_id) return;
+
+      const key = `${routerId}-${port}`;
+      const prevHello = previousNeighborHello[key];
+      if (prevHello !== undefined && neighbor.last_hello > prevHello) {
+        spawnPacket(neighbor.peer_id, routerId, "HELLO");
+      }
+      previousNeighborHello[key] = neighbor.last_hello;
+
+      if (neighbor.state === "FULL" && Math.random() < 0.03) {
+        spawnPacket(routerId, neighbor.peer_id, "LSA");
       }
     });
   });
@@ -1459,14 +1463,19 @@ function spawnPathPacket(path, index, isReply) {
   });
 }
 
+function classicPingLine(ip, ttl) {
+  const timeMs = Math.round(20 + Math.random() * 100);
+  return `Réponse de ${ip} : octets=32 temps=${timeMs} ms TTL=${ttl}`;
+}
+
 function startPingSimulation() {
   const consoleEl = document.getElementById("ping-console");
   const leftCol = document.querySelector(".left-column");
-  
+
   if (consoleEl) {
     consoleEl.classList.remove("hidden");
     consoleEl.classList.remove("minimized");
-    
+
     if (leftCol) {
       leftCol.scrollTo({
         top: consoleEl.offsetTop - 10,
@@ -1474,9 +1483,9 @@ function startPingSimulation() {
       });
     }
   }
-  
+
   clearConsole();
-  
+
   if (!selectedSourceId || !selectedDestId || !activeShortestPath || activeShortestPath.length === 0) {
     logToConsole("ERREUR : Impossible de lancer la commande ping.", "warning");
     logToConsole("Raison : Aucune route active détectée.", "system");
@@ -1491,11 +1500,27 @@ function startPingSimulation() {
     logToConsole("Raison : La source ou la destination est éteinte.", "system");
     return;
   }
-  
-  logToConsole(`Envoi d'une requête ping sur Routeur ${selectedDestId} avec 32 octets de données :`, "info");
-  logToConsole(`Route identifiée par OSPF : ${activeShortestPath.join(" ➔ ")}`, "system");
-  
-  spawnPathPacket(activeShortestPath, 0, false);
+
+  const destMeta = routersMeta[selectedDestId];
+  const destIp = destMeta ? destMeta.ip : "0.0.0.0";
+  const ttl = Math.max(1, 64 - Math.max(0, activeShortestPath.length - 2));
+
+  logToConsole(`Envoi d'une requête 'Ping' ${destIp} avec 32 octets de données :`, "info");
+
+  let replyCount = 0;
+  const replyInterval = setInterval(() => {
+    logToConsole(classicPingLine(destIp, ttl), "success");
+    replyCount++;
+
+    if (replyCount >= 4) {
+      clearInterval(replyInterval);
+      setTimeout(() => {
+        logToConsole(`Envoi d'une requête ping sur Routeur ${selectedDestId} avec 32 octets de données :`, "info");
+        logToConsole(`Route identifiée par OSPF : ${activeShortestPath.join(" ➔ ")}`, "system");
+        spawnPathPacket(activeShortestPath, 0, false);
+      }, 400);
+    }
+  }, 500);
 }
 
 function animationLoop() {
