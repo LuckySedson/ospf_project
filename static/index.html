@@ -15,6 +15,7 @@
       <button id="btn-stop-all" class="btn btn-danger">Arrêter tout</button>
       <button id="btn-ping" class="btn" style="background-color: #3498db; color: white;">Simuler Ping</button>
       <button id="btn-theme-toggle" class="btn btn-theme-toggle" title="Basculer mode sombre/clair">🌙</button>
+      <button id="btn-help" class="btn" title="Aide">❓</button>
     </div>
   </header>
 
@@ -91,6 +92,58 @@
       <div class="modal-actions">
         <button id="modal-cancel" class="btn">Annuler</button>
         <button id="modal-confirm" class="btn btn-danger">Confirmer</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="help-modal-overlay" class="modal-overlay hidden">
+    <div class="modal-box help-box">
+      <div class="modal-icon icon-info">📘</div>
+      <h3>Guide d'utilisation — Simulateur OSPF</h3>
+
+      <div class="help-content">
+        <div class="help-section">
+          <h4>🖱️ Interactions sur la topologie</h4>
+          <ul>
+            <li><strong>Glisser un routeur/segment</strong> : réorganiser la disposition du graphe</li>
+            <li><strong>Clic sur un routeur</strong> : le définir comme source du chemin</li>
+            <li><strong>Shift + clic sur un routeur</strong> : le définir comme destination</li>
+            <li><strong>Clic sur un lien</strong> : modifier sa bande passante (coût recalculé automatiquement)</li>
+            <li><strong>Clic sur un lien vers un segment</strong> : modifier la priorité/coût de ce membre</li>
+            <li><strong>Clic sur une zone vide</strong> : réinitialiser la sélection</li>
+          </ul>
+        </div>
+
+        <div class="help-section">
+          <h4>🎨 Lecture des couleurs</h4>
+          <ul>
+            <li><span class="dot" style="background:#33e6a8"></span> Lien actif (adjacence FULL)</li>
+            <li><span class="dot" style="background:#3a4552"></span> Lien configuré mais inactif</li>
+            <li><span class="dot" style="background:#ffd700"></span> Chemin le plus court sélectionné / DR du segment</li>
+            <li><span class="dot" style="background:#c0c0c0"></span> BDR du segment (Backup Designated Router)</li>
+            <li><span class="dot" style="background:#3498db"></span> Routeur source sélectionné</li>
+            <li><span class="dot" style="background:#e74c3c"></span> Routeur destination sélectionné</li>
+          </ul>
+        </div>
+
+        <div class="help-section">
+          <h4>📡 Ajouter un routeur / segment</h4>
+          <p>Un routeur = un processus indépendant (Start/Stop). Un segment simule un réseau multi-accès (type LAN Ethernet) où plusieurs routeurs élisent un DR/BDR au lieu de former des adjacences point-à-point directes.</p>
+        </div>
+
+        <div class="help-section">
+          <h4>🏓 Simuler un ping</h4>
+          <p>Sélectionne une source et une destination, puis clique sur "Simuler Ping" : un terminal affiche le trajet réel emprunté par les paquets (calculé depuis la table de routage OSPF), avec une animation dont la vitesse reflète la bande passante de chaque tronçon.</p>
+        </div>
+
+        <div class="help-section">
+          <h4>👑 Élection DR/BDR</h4>
+          <p>Sur un segment, le routeur avec la priorité la plus haute devient DR, le second BDR. En cas d'égalité de priorité, l'adresse IP la plus haute départage. L'élection est <strong>non-préemptive</strong> : comme dans le vrai OSPF, un DR en place ne perd son rôle qu'en cas de panne — augmenter une priorité ailleurs ne le détrône pas à chaud.</p>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button id="help-modal-close" class="btn btn-primary">Fermer</button>
       </div>
     </div>
   </div>

@@ -333,6 +333,20 @@ document.getElementById("btn-theme-toggle").addEventListener("click", () => {
   applyTheme();
 });
 
+document.getElementById("btn-help")?.addEventListener("click", () => {
+  document.getElementById("help-modal-overlay").classList.remove("hidden");
+});
+
+document.getElementById("help-modal-close")?.addEventListener("click", () => {
+  document.getElementById("help-modal-overlay").classList.add("hidden");
+});
+
+document.getElementById("help-modal-overlay")?.addEventListener("click", (e) => {
+  if (e.target.id === "help-modal-overlay") {
+    document.getElementById("help-modal-overlay").classList.add("hidden");
+  }
+});
+
 document.getElementById("btn-add-router").addEventListener("click", async () => {
   const router_id = document.getElementById("new-router-id").value.trim();
   const port = parseInt(document.getElementById("new-router-port").value, 10);

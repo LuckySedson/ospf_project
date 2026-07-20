@@ -510,6 +510,60 @@ body.light-mode .terminal-console {
   padding: 8px 12px;
 }
 
+.help-box {
+  width: 520px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.help-box h3 {
+  text-align: center;
+}
+
+.help-content {
+  margin-top: 12px;
+}
+
+.help-section {
+  margin-bottom: 16px;
+}
+
+.help-section h4 {
+  color: var(--accent);
+  font-size: 13px;
+  margin: 0 0 6px 0;
+}
+
+.help-section p {
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.help-section ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--text);
+  line-height: 1.7;
+}
+
+.help-section li {
+  margin-bottom: 2px;
+}
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
 .modal-input.hidden { display: none; }
 
 .modal-icon.icon-error { color: var(--danger); }
