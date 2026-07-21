@@ -175,11 +175,16 @@ function showBandwidthModal(title, message, currentBandwidth) {
     const onConfirm = () => {
       const bw = modalSelect.value === "custom" ? parseInt(modalInput.value, 10) : parseInt(modalSelect.value, 10);
       if (!Number.isFinite(bw) || bw <= 0) {
-        cleanup(null);
+        showAlert("Valeur invalide", "La bande passante doit être un nombre entier positif (en Mbps).", "error");
+        return;
+      }
+      if (bw > 1000000) {
+        showAlert("Valeur trop élevée", "La bande passante maximale simulée est de 1000000 Mbps (1 Tbps).", "error");
         return;
       }
       cleanup(bw);
     };
+
     const onCancel = () => cleanup(null);
     const onOverlayClick = (e) => { if (e.target === modalOverlay) cleanup(null); };
 
@@ -285,6 +290,22 @@ function openEditRouterModal(id) {
       await showAlert("Champs manquants", "Merci de remplir l'ID, le port UDP et le port de statut.", "error");
       return;
     }
+    if (!/^[A-Za-z0-9_-]+$/.test(newId)) {
+      await showAlert("Nom invalide", "L'ID ne doit contenir que des lettres, chiffres, tirets ou underscores.", "error");
+      return;
+    }
+    if (newPort < 1024 || newPort > 65535 || newStatusPort < 1024 || newStatusPort > 65535) {
+      await showAlert("Port invalide", "Les ports doivent être compris entre 1024 et 65535.", "error");
+      return;
+    }
+    if (newPort === newStatusPort) {
+      await showAlert("Ports identiques", "Le port UDP et le port de statut doivent être différents.", "error");
+      return;
+    }
+    if (newIp && !/^(\d{1,3}\.){3}\d{1,3}$/.test(newIp)) {
+      await showAlert("IP invalide", "Format attendu : X.X.X.X.", "error");
+      return;
+    }
 
     cleanup();
 
@@ -355,6 +376,26 @@ document.getElementById("btn-add-router").addEventListener("click", async () => 
 
   if (!router_id || !port || !status_port) {
     await showAlert("Champs manquants", "Merci de remplir l'ID, le port UDP et le port de statut.", "error");
+    return;
+  }
+
+  if (!/^[A-Za-z0-9_-]+$/.test(router_id)) {
+    await showAlert("Nom invalide", "L'ID du routeur ne doit contenir que des lettres, chiffres, tirets ou underscores (pas d'espace).", "error");
+    return;
+  }
+
+  if (port < 1024 || port > 65535 || status_port < 1024 || status_port > 65535) {
+    await showAlert("Port invalide", "Les ports doivent être compris entre 1024 et 65535.", "error");
+    return;
+  }
+
+  if (port === status_port) {
+    await showAlert("Ports identiques", "Le port UDP et le port de statut doivent être différents.", "error");
+    return;
+  }
+
+  if (ip && !/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
+    await showAlert("IP invalide", "Format attendu : X.X.X.X (ex: 10.0.0.5).", "error");
     return;
   }
 
@@ -462,8 +503,29 @@ document.getElementById("btn-add-segment").addEventListener("click", async () =>
     }
   });
 
-  if (!segment_id || members.length < 2) {
-    await showAlert("Champs manquants", "Un ID de segment et au moins 2 routeurs cochés sont requis.", "error");
+  if (!segment_id) {
+    await showAlert("Champ manquant", "Un ID de segment est requis.", "error");
+    return;
+  }
+
+  if (!/^[A-Za-z0-9_-]+$/.test(segment_id)) {
+    await showAlert("Nom invalide", "L'ID du segment ne doit contenir que des lettres, chiffres, tirets ou underscores.", "error");
+    return;
+  }
+
+  if (routersMeta[segment_id] || segmentsMeta[segment_id]) {
+    await showAlert("Nom déjà utilisé", "Cet identifiant est déjà pris par un routeur ou un segment existant.", "error");
+    return;
+  }
+
+  if (members.length < 2) {
+    await showAlert("Membres insuffisants", "Un segment nécessite au moins 2 routeurs cochés.", "error");
+    return;
+  }
+
+  const priorities = members.map((m) => m.priority);
+  if (priorities.some((p) => p < 0 || p > 255 || !Number.isInteger(p))) {
+    await showAlert("Priorité invalide", "La priorité doit être un entier entre 0 et 255.", "error");
     return;
   }
 
@@ -1269,8 +1331,13 @@ function openEditSegmentMemberModal(segmentId, routerId, priority, cost) {
   const onConfirm = async () => {
     const priority = parseInt(editSegPriorityInput.value, 10);
     const cost = parseInt(editSegCostInput.value, 10);
-    if (!Number.isFinite(priority) || priority < 0 || !Number.isFinite(cost) || cost <= 0) {
-      await showAlert("Valeurs invalides", "Priorité ≥ 0 et coût > 0 requis.", "error");
+
+    if (!Number.isInteger(priority) || priority < 0 || priority > 255) {
+      await showAlert("Priorité invalide", "La priorité doit être un entier entre 0 (jamais DR/BDR) et 255.", "error");
+      return;
+    }
+    if (!Number.isInteger(cost) || cost <= 0 || cost > 65535) {
+      await showAlert("Coût invalide", "Le coût doit être un entier entre 1 et 65535.", "error");
       return;
     }
     cleanup();
@@ -1316,6 +1383,14 @@ function openRenameSegmentModal(segmentId) {
     const newId = renameSegInput.value.trim();
     if (!newId) {
       await showAlert("Champ manquant", "Merci de saisir un nom.", "error");
+      return;
+    }
+    if (!/^[A-Za-z0-9_-]+$/.test(newId)) {
+      await showAlert("Nom invalide", "Le nom ne doit contenir que des lettres, chiffres, tirets ou underscores.", "error");
+      return;
+    }
+    if (newId !== segmentId && (routersMeta[newId] || segmentsMeta[newId])) {
+      await showAlert("Nom déjà utilisé", "Cet identifiant est déjà pris.", "error");
       return;
     }
     cleanup();

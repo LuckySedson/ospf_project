@@ -564,6 +564,33 @@ body.light-mode .terminal-console {
   vertical-align: middle;
 }
 
+#btn-wireshark {
+  background: linear-gradient(135deg, #1a2b3d, #0f1a24);
+  border: 1px solid #2e78c7;
+  color: #6fb3f0;
+  font-weight: 600;
+  box-shadow: 0 0 8px rgba(46, 120, 199, 0.25);
+  transition: all 0.2s ease;
+}
+
+#btn-wireshark:hover {
+  border-color: #6fb3f0;
+  color: #a8d4ff;
+  box-shadow: 0 0 14px rgba(46, 120, 199, 0.5);
+  transform: translateY(-1px);
+}
+
+body.light-mode #btn-wireshark {
+  background: linear-gradient(135deg, #eaf3fc, #dbeafe);
+  border: 1px solid #2e78c7;
+  color: #1d5a99;
+  box-shadow: 0 0 8px rgba(46, 120, 199, 0.15);
+}
+
+body.light-mode #btn-wireshark:hover {
+  box-shadow: 0 0 14px rgba(46, 120, 199, 0.3);
+}
+
 .wireshark-box {
   width: 560px;
   max-width: 90vw;
