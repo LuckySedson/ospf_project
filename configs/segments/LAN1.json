@@ -3,18 +3,18 @@
   "members": [
     {
       "router_id": "R1",
-      "priority": 5,
+      "priority": 10,
       "cost": 1
     },
     {
       "router_id": "R3",
       "priority": 5,
-      "cost": 1
+      "cost": 2
     },
     {
       "router_id": "R4",
       "priority": 1,
-      "cost": 1
+      "cost": 2
     }
   ]
 }

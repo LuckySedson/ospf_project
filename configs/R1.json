@@ -5,22 +5,24 @@
   "links": [
     {
       "peer_port": 9002,
-      "cost": 5
+      "cost": 1000,
+      "bandwidth": 100
     },
     {
       "peer_port": 9003,
-      "cost": 5
+      "cost": 100,
+      "bandwidth": 1000
     },
     {
       "peer_port": 9005,
-      "cost": 1000,
-      "bandwidth": 100
+      "cost": 10000,
+      "bandwidth": 10
     }
   ],
   "segments": [
     {
       "segment_id": "LAN1",
-      "priority": 5,
+      "priority": 10,
       "cost": 1,
       "peer_ports": [
         9003,

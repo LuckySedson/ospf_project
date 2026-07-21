@@ -5,15 +5,18 @@
   "links": [
     {
       "peer_port": 9001,
-      "cost": 5
+      "cost": 1000,
+      "bandwidth": 100
     },
     {
       "peer_port": 9003,
-      "cost": 1
+      "cost": 100,
+      "bandwidth": 1000
     },
     {
       "peer_port": 9004,
-      "cost": 5
+      "cost": 1000,
+      "bandwidth": 100
     }
   ],
   "ip": "10.0.0.2"
