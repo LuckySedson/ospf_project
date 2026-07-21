@@ -5,6 +5,7 @@ import threading
 import time
 import logging
 import sys
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from config_loader import load_config
@@ -44,6 +45,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                 "segments": {sid: seg.snapshot() for sid, seg in self.router_ref.segments.items()},
                 "lsdb": self.router_ref.lsdb.snapshot(),
                 "routing_table": self.router_ref.routing_table,
+                "packet_log": list(self.router_ref.packet_log),
             }
             self._send_json(payload)
         else:
@@ -91,6 +93,9 @@ class Router:
         self.port = config["port"]
         self.status_port = config["status_port"]
         self.links_config = config["links"]
+        
+        self.packet_log = deque(maxlen=40)
+        self.packet_log_lock = threading.Lock()
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind((HOST, self.port))
@@ -133,11 +138,16 @@ class Router:
         while self.running:
             time.sleep(1)
 
+    def log_packet(self, direction, packet_dict):
+        with self.packet_log_lock:
+            self.packet_log.appendleft({"time": time.time(), "direction": direction, **packet_dict})
+    
     def listen_loop(self):
         while self.running:
             try:
                 data, addr = self.sock.recvfrom(4096)
                 msg = parse_message(data)
+                self.log_packet("RX", msg)
                 if msg is None:
                     continue
 
@@ -177,6 +187,10 @@ class Router:
         while self.running:
             for segment in list(self.segments.values()):
                 payload = build_segment_hello(self.router_id, segment.segment_id, segment.priority, segment.dr, segment.bdr, self.ip)
+                self.log_packet("TX", {
+                    "type": SEGMENT_HELLO, "origin": self.router_id, "segment_id": segment.segment_id,
+                    "priority": segment.priority, "dr": segment.dr, "bdr": segment.bdr, "ip": self.ip,
+                })
                 for port in list(segment.peers.keys()):
                     self.sock.sendto(payload, (HOST, port))
             time.sleep(HELLO_INTERVAL)
@@ -216,6 +230,7 @@ class Router:
         while self.running:
             seen = self.neighbor_manager.get_seen_peer_ids()
             payload = build_hello(self.router_id, seen)
+            self.log_packet("TX", {"type": HELLO, "origin": self.router_id, "seen_neighbors": seen})
             for port in list(self.neighbor_manager.snapshot().keys()):
                 self.sock.sendto(payload, (HOST, port))
             time.sleep(HELLO_INTERVAL)
@@ -233,6 +248,7 @@ class Router:
         self.seq += 1
         self.lsdb.update(self.router_id, self.seq, links)
         msg = {"origin": self.router_id, "seq": self.seq, "links": links}
+        self.log_packet("TX", {"type": LSA, **msg})
         self.log.info(f"Emission LSA seq={self.seq} links={links}")
         self.flood_lsa(msg)
         self.recompute_routing_table()

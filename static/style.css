@@ -564,6 +564,58 @@ body.light-mode .terminal-console {
   vertical-align: middle;
 }
 
+.wireshark-box {
+  width: 560px;
+  max-width: 90vw;
+  max-height: 82vh;
+  overflow-y: auto;
+  text-align: left;
+}
+.wireshark-box h3 { text-align: center; }
+
+.ws-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-top: 10px;
+}
+
+.ws-row {
+  display: grid;
+  grid-template-columns: 50px 80px 110px 1fr;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.ws-row:hover { background: rgba(51, 230, 168, 0.08); }
+.ws-row-selected { background: rgba(51, 230, 168, 0.15); }
+
+.ws-type-hello .ws-pkttype { color: var(--accent); }
+.ws-type-lsa .ws-pkttype { color: var(--warn); }
+.ws-type-segment_hello .ws-pkttype { color: var(--highlight); }
+
+.ws-detail {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.ws-field {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  padding: 2px 0;
+  border-bottom: 1px dashed var(--border);
+}
+.ws-label { color: var(--muted); }
+.ws-value { color: var(--text); text-align: right; }
+
 .modal-input.hidden { display: none; }
 
 .modal-icon.icon-error { color: var(--danger); }

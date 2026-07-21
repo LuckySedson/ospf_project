@@ -1589,6 +1589,102 @@ function renderSegmentsList() {
   });
 }
 
+function renderPacketDetail(pkt) {
+  const rows = [];
+  const addRow = (label, value) => rows.push(`<div class="ws-field"><span class="ws-label">${label}</span><span class="ws-value">${value}</span></div>`);
+
+  addRow("Trame", `${pkt.direction === "TX" ? "Sortante (TX)" : "Entrante (RX)"} — ${new Date(pkt.time * 1000).toLocaleTimeString()}`);
+  addRow("Protocole IP", "89 (OSPF) — simulé ici en UDP sur 127.0.0.1");
+
+  if (pkt.type === "HELLO") {
+    addRow("Version OSPF", "2");
+    addRow("Type de message", "1 (Hello)");
+    addRow("Router ID (origine)", pkt.origin);
+    addRow("Area ID", "0.0.0.0 (backbone, simplifié)");
+    addRow("Hello Interval", "2s (10s dans le vrai OSPF)");
+    addRow("Router Dead Interval", "8s (40s dans le vrai OSPF)");
+    addRow("Voisins vus (seen_neighbors)", pkt.seen_neighbors && pkt.seen_neighbors.length ? pkt.seen_neighbors.join(", ") : "(aucun)");
+  } else if (pkt.type === "LSA") {
+    addRow("Version OSPF", "2");
+    addRow("Type de message", "4 (Link State Update)");
+    addRow("Advertising Router", pkt.origin);
+    addRow("LS Sequence Number", pkt.seq);
+    addRow("LS Type", "1 (Router-LSA)");
+    addRow("Nombre de liens", Object.keys(pkt.links || {}).length);
+    Object.entries(pkt.links || {}).forEach(([linkId, cost]) => {
+      addRow("↳ Link ID", `${linkId} — métrique = ${cost}`);
+    });
+  } else if (pkt.type === "SEGMENT_HELLO") {
+    addRow("Version OSPF", "2");
+    addRow("Type de message", "1 (Hello, réseau multi-accès)");
+    addRow("Router ID (origine)", pkt.origin);
+    addRow("Router Priority", pkt.priority);
+    addRow("Designated Router (DR)", pkt.dr || "(non élu)");
+    addRow("Backup Designated Router (BDR)", pkt.bdr || "(non élu)");
+    addRow("Segment (réseau)", pkt.segment_id);
+    addRow("Router ID source (IP)", pkt.ip || "—");
+  }
+
+  return rows.join("");
+}
+
+function renderPacketList(packets) {
+  const container = document.getElementById("wireshark-packet-list");
+  container.innerHTML = "";
+  packets.forEach((pkt) => {
+    const row = document.createElement("div");
+    row.className = "ws-row ws-type-" + (pkt.type || "").toLowerCase();
+    const time = new Date(pkt.time * 1000).toLocaleTimeString();
+    row.innerHTML = `<span class="ws-dir">${pkt.direction}</span><span class="ws-time">${time}</span><span class="ws-pkttype">${pkt.type}</span><span class="ws-origin">${pkt.origin}</span>`;
+    row.addEventListener("click", () => {
+      document.querySelectorAll(".ws-row").forEach((r) => r.classList.remove("ws-row-selected"));
+      row.classList.add("ws-row-selected");
+      const detail = document.getElementById("wireshark-packet-detail");
+      detail.innerHTML = renderPacketDetail(pkt);
+      detail.classList.remove("hidden");
+    });
+    container.appendChild(row);
+  });
+}
+
+let wiresharkInterval = null;
+
+function openWireshark() {
+  const select = document.getElementById("wireshark-router-select");
+  select.innerHTML = "";
+  Object.keys(routersMeta).sort().forEach((id) => {
+    const o = document.createElement("option");
+    o.value = id;
+    o.textContent = id;
+    select.appendChild(o);
+  });
+
+  document.getElementById("wireshark-modal-overlay").classList.remove("hidden");
+  document.getElementById("wireshark-packet-detail").classList.add("hidden");
+
+  const refreshPackets = () => {
+    const rid = select.value;
+    const rState = latestState[rid];
+    if (rState && rState.packet_log) {
+      renderPacketList(rState.packet_log);
+    }
+  };
+  select.onchange = refreshPackets;
+  refreshPackets();
+  wiresharkInterval = setInterval(refreshPackets, 1500);
+}
+
+function closeWireshark() {
+  document.getElementById("wireshark-modal-overlay").classList.add("hidden");
+  if (wiresharkInterval) clearInterval(wiresharkInterval);
+}
+
+document.getElementById("btn-wireshark")?.addEventListener("click", openWireshark);
+document.getElementById("wireshark-modal-close")?.addEventListener("click", closeWireshark);
+document.getElementById("wireshark-modal-overlay")?.addEventListener("click", (e) => {
+  if (e.target.id === "wireshark-modal-overlay") closeWireshark();
+});
+
 window.addEventListener("DOMContentLoaded", () => {
   applyTheme();
   refresh();
