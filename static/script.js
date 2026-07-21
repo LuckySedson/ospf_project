@@ -1486,7 +1486,7 @@ function startPingSimulation() {
 
   clearConsole();
 
-  if (!selectedSourceId || !selectedDestId || !activeShortestPath || activeShortestPath.length === 0) {
+  if (!selectedSourceId || !selectedDestId) {
     logToConsole("ERREUR : Impossible de lancer la commande ping.", "warning");
     logToConsole("Raison : Aucune route active détectée.", "system");
     logToConsole("Action : Sélectionnez une Source (Clic gauche) et une Destination (Shift + Clic) sur un chemin valide (jaune).", "info");
@@ -1495,16 +1495,27 @@ function startPingSimulation() {
 
   const isSourceRunning = latestState[selectedSourceId] && latestState[selectedSourceId].running;
   const isDestRunning = latestState[selectedDestId] && latestState[selectedDestId].running;
-  if (!isSourceRunning || !isDestRunning) {
-    logToConsole("ERREUR : Échec de la transmission du ping.", "warning");
-    logToConsole("Raison : La source ou la destination est éteinte.", "system");
+  const destMeta = routersMeta[selectedDestId];
+  const destIp = destMeta ? destMeta.ip : "0.0.0.0";
+
+  if (!isSourceRunning || !isDestRunning || !activeShortestPath || activeShortestPath.length === 0) {
+    logToConsole(`Envoi d'une requête 'Ping' ${destIp} avec 32 octets de données :`, "info");
+
+    let timeoutCount = 0;
+    const timeoutInterval = setInterval(() => {
+      logToConsole("Délai d'attente de la demande dépassé.", "warning");
+      timeoutCount++;
+
+      if (timeoutCount >= 4) {
+        clearInterval(timeoutInterval);
+        logToConsole(`Statistiques Ping pour ${destIp}:`, "system");
+        logToConsole("    Paquets : envoyés = 4, reçus = 0, perdus = 4 (perte 100%),", "warning");
+      }
+    }, 500);
     return;
   }
 
-  const destMeta = routersMeta[selectedDestId];
-  const destIp = destMeta ? destMeta.ip : "0.0.0.0";
   const ttl = Math.max(1, 64 - Math.max(0, activeShortestPath.length - 2));
-
   logToConsole(`Envoi d'une requête 'Ping' ${destIp} avec 32 octets de données :`, "info");
 
   let replyCount = 0;
